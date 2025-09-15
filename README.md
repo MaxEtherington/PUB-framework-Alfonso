@@ -6,20 +6,22 @@ Training data can be extracted from the plate model and other input datasets usi
 The first of these notebooks extracts data for the positive/negative mineral deposit observations in `source_data/deposit_data_global.csv`, to be used for training and testing.
 The second notebook extracts data for a regular grid of points, to be used to create the time-dependent mineral prospectivity maps.
 
-Alternatively, the above process can be skipped by using pre-prepared data downloaded from the Zenodo repository ([zenodo.org/record/8157691](https://zenodo.org/record/8157691)).
+Alternatively, the above process can be skipped by using pre-prepared data downloaded from the Zenodo repository ([zenodo.org/record/14010839](https://zenodo.org/record/14010839)).
 Running the notebooks in sequence, beginning with `01-create_pu_classifier.ipynb`, will automatically download this data to a directory named `prepared_data`.
 
 ### To run the notebooks:
 
 1. Create a `conda` environment using the `environment.yml` file: `conda env create --file environment.yml`
 1. Run the following notebooks to download and extract training data from Zenodo (optional):
-    - `00c-extract_training_data.ipynb`
+    - `00a-generate_data.ipynb`
     - `00b-extract_grid_data.ipynb`
+    - `00c-extract_training_data.ipynb`
 1. Run these notebooks to train a PU classifier and create prospectivity maps and other plots:
-    - `01-create_pu_classifier.ipynb`
+    - `01-create_classifiers.ipynb`
     - `02-create_probability_maps.ipynb`
-    - `03-create_probability_animation.ipynb`
+    - `03-create_probability_animations.ipynb`
     - `04-create_erosion_distribution.ipynb`
     - `05-create_preservation_maps.ipynb`
     - `06-create_preservation_animations.ipynb`
     - `07-partial_dependence.ipynb`
+    - `08-time_series.ipynb`
