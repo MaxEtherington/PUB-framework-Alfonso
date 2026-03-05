@@ -129,6 +129,31 @@ Existing keys: `output_dir`, `extracted_data_dir`, `deposits_filename`, `timespa
 | Before reading or writing any file path, working on config/path logic, or understanding the data hierarchy | [`docs/data-layout.md`](docs/data-layout.md) |
 | Before working on plate reconstruction, raster generation, model file setup, or adding a new reconstruction | [`docs/reconstruction.md`](docs/reconstruction.md) |
 | Before working on mantle feature extraction, G-ADOPT outputs, or `00d-extract_mantle_features.ipynb` | [`docs/mantle-extraction.md`](docs/mantle-extraction.md) |
+| When tracing the provenance of source datasets or the scientific rationale behind original repo design decisions |[`docs/Alfonso2024.md`](docs/Alfonso2024.md) |
 
 ## Ending Sessions
-At the end of any session involving a significant decision, architectural change, or resolved ambiguity, propose updates to the relevant docs/ file and to this file if needed. Do not update without confirmation.
+
+At the end of every coding session, perform the following steps **before** yielding back to the
+user:
+
+1. **Update `docs/pipeline.md` checkboxes.** For every task completed during this session, change
+   `- [ ]` to `- [x]`. Do not mark tasks as done unless they are fully implemented and verified.
+
+2. **Record any new bugs or discovered issues.** If a previously unknown bug was found, add it to
+   the "Known Critical Bugs" section above with the same format as existing entries. If it was
+   fixed, remove or cross-out the entry.
+
+3. **Record any unresolved scientific or design decisions.** If work was blocked or deferred due
+   to a decision that requires user input (not a coding decision), add it to the relevant doc
+   (`docs/reconstruction.md`, `docs/mantle-extraction.md`, etc.) as a clearly marked
+   `**UNRESOLVED:**` block so context is preserved for the next session.
+
+4. **Write a brief session summary.** At the end of your final message, include:
+   - What was completed (reference `docs/pipeline.md` task IDs, e.g. "Completed 0.1, 0.2")
+   - Any blockers encountered and their status
+   - The recommended next action for the next session
+
+5. **Do not leave half-written code.** If a file was opened and edited, ensure it is in a
+   syntactically valid and importable state when the session ends. Incomplete implementations
+   should be guarded with a `raise NotImplementedError` and a comment explaining what remains.
+At the end of any session involving a significant decision, architectural change, or resolved ambiguity, propose updates to the relevant docs/ file and to this file if needed. Do not push updates without user confirmation.

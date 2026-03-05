@@ -104,11 +104,11 @@ All items here are prerequisites for everything else.
   Requires access to `https://www.earthbyte.org/webdav/ftp/earthbyte/Paleotopography/`.
   Matthews2016 paleogeography is geometrically independent of the plate model.
 
-- [ ] **1B.5** Erosion/deposition data — **requires scientific decision.**
-  Currently downloaded from Zenodo 14010839. Check Alfonso 2024 data methods: is this
-  dataset reconstruction-specific (computed under Clennett2020) or independent? If
-  reconstruction-specific and no Zahirovic2022 equivalent exists, this is either a known
-  limitation to document or a blocker requiring re-computation.
+- [x] **1B.5** ~~Erosion/deposition data~~ — **RESOLVED: excluded from this project.**
+  Alfonso 2024 published paper does not include erosion as a training feature (confirmed by
+  feature importance tables and Methods). This project follows the published model. No
+  re-computation needed; document as a stated caveat in the thesis if surface process
+  feedbacks are discussed.
 
 - [ ] **1B.6** Run `00a` end-to-end targeting `data/input_data/zahirovic2022/grids/`.
   Validate output netCDFs by plotting a sample depth slice.
