@@ -39,48 +39,14 @@ All repositories live under:
 | `00a-generate_data.ipynb` | Generate all input rasters from scratch (seafloor age, sediment, carbonate, crustal thickness, CO2, erosion). Requires submodules. Skip by downloading from Zenodo 14010839. |
 | `00b-extract_training_data.ipynb` | Extract kinematic + raster features at deposit and unlabelled point locations → `training_data_global.csv` |
 | `00c-extract_grid_data.ipynb` | Same extraction on a regular prediction grid → `grid_data.csv` |
-| `00d-extract_mantle_features.ipynb` | **NEW (not yet written).** Appends G-ADOPT mantle features to training and grid data. |
+| `00d-extract_mantle_features.ipynb` | Appends G-ADOPT mantle features to training and grid data. ([#24](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/24)) |
 | `01-create_classifiers.ipynb` | Train PUB classifier + SVM. Feature selection, cross-validation. |
 | `02-create_probability_maps.ipynb` | Apply trained classifier to grid data → probability netCDF maps. |
 | `03–08` | Animations, erosion, preservation, partial dependence, time series. |
 
-### `lib/` — Module Summary
-| Module | Purpose |
-|---|---|
-| `load_params.py` | `get_params(filename, notebook)` — loads and merges YAML config. The entry point for all config reads. |
-| `plate_models.py` | `get_plate_reconstruction()`, `get_plot_topologies()` — reconstruction-agnostic model loading via local path or `plate-model-manager`. |
-| `calculate_convergence.py` | Subduction zone kinematics via PlateTectonicTools. |
-| `coregister_ocean_rasters.py` | Joins seafloor rasters to subduction trench points, masked to subducting plate. |
-| `create_study_area_polygons.py` | Buffers reference features (currently subduction zones) to define the study domain per timestep. |
-| `generate_unlabelled_points.py` | Sphere-uniform random points filtered to study area polygons. |
-| `combine_point_data.py` | Merges deposit + unlabelled point data; reconstructs paleocoordinates. |
-| `coregister_combined_point_data.py` | Haversine nearest-neighbour join of points to subduction zone rows. |
-| `coregister_crustal_thickness.py` | Radius-search extraction of crustal thickness statistics per point. |
-| `pu.py` | `BaggingPuClassifier` creation, `get_xy()`, `generate_grid_points()`, `create_probability_grids()`, constants (`CORRELATED_COLUMNS`, `PU_PARAMS`). |
-| `cv.py` | `perform_cv()` — `RepeatedStratifiedKFold` cross-validation with per-region evaluation. |
-| `feature_selection.py` | Spearman correlation clustering, `select_features()`. |
-| `misc.py` | `reconstruct_by_topologies()`, `calculate_slab_flux()`, `filter_topological_features()`. |
-| `water.py` | Subducted water budget (6 components). |
-| `slab_dip.py` | Slab dip prediction via `Slab-Dip` package. |
-| `assign_regions.py` | Spatial join to `regions.geojson`. **Has a known broken default path — see Known Bugs.** |
-| `erodep/` | Cumulative erosion/deposition extraction. |
-| `extract_data/` | Raster generation sub-package (used by `00a` only). |
-| `check_files.py` | Downloads plate model and prepared data from Zenodo if missing. |
-| `visualisation.py`, `animation.py`, `partial_dependence.py`, `feature_importance.py` | Plotting and output utilities. |
-
 ### Config System
 All parameters are read from `notebook_parameters_default.yml` via `lib.load_params.get_params()`.
 Per-run overrides live in `config/` and are merged by `main.py` before notebook execution.
-
-**Current state (Phase 0 not yet complete):**
-- `main.py` does not yet exist — edit `notebook_parameters_default.yml` directly for now
-- Several planned config keys do not yet exist in the YAML: `reconstruction.name`,
-  `reconstruction.plate_model_dir`, `raster_data_dir`, `reference_feature`, `buffer_km`,
-  `use_mantle_features`, `gadopt_run_name` — these are added in Phase 0.3
-- `plate_model_dir` is currently hardcoded as a literal in `00b`, `00c`, `01` — Phase 0.4 moves it to config
-
-Existing keys: `output_dir`, `extracted_data_dir`, `deposits_filename`, `timespan.min/max`,
-`n_jobs`, `random_seed`, `plate_model.use_provided_plate_model`, `plate_model.plate_model_name`.
 
 ---
 
@@ -106,18 +72,14 @@ Existing keys: `output_dir`, `extracted_data_dir`, `deposits_filename`, `timespa
 
 ## Known Critical Bugs (fix before any other work)
 
-1. **`lib/assign_regions.py`** — `DEFAULT_REGIONS_FILE = "../source_data/regions.shp"` references a
-   non-existent path. Change to `Path(__file__).parent.parent / "regions.geojson"`.
+1. **`lib/assign_regions.py`** — broken default path. Fix and details in [#1](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/1).
 
-2. **`submodules/` is uninitialised** — `CarbonateSedimentThickness/` and
-   `predicting-sediment-thickness/` are empty. Run `git submodule update --init --recursive`
-   before attempting `00a-generate_data.ipynb`.
+2. **`submodules/` is uninitialised** — fix in [#2](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/2). Required before `00a`.
 
 3. **`00a-generate_data.ipynb`** — `overwrite` and `cleanup` are hardcoded to `False` in a cell
    immediately after reading them from params, silently overriding the YAML config.
 
-4. **`run_notebooks.py`** — the `ALL_NOTEBOOKS` list contains stale filenames that do not match
-   actual notebook names. Do not rely on it for batch execution; pass filenames explicitly.
+4. **`run_notebooks.py`** — stale `ALL_NOTEBOOKS` filenames; tracked in [#8](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/8). Pass filenames explicitly for now.
 
 ---
 
