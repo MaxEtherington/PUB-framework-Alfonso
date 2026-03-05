@@ -9,9 +9,9 @@ import papermill as pm
 os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
 
 ALL_NOTEBOOKS = (
-    "00a-extract_training_data",
-    "00b-extract_grid_data",
-    "00c-extract_training_data_global",
+    "00a-generate_data",
+    "00b-extract_training_data",
+    "00c-extract_grid_data",
     "01-create_classifiers",
     "02-create_probability_maps",
     "03-create_probability_animations",
