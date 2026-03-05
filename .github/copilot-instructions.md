@@ -125,19 +125,41 @@ Existing keys: `output_dir`, `extracted_data_dir`, `deposits_filename`, `timespa
 
 | Condition | File |
 |---|---|
-| Before planning or implementing any pipeline stage, or reviewing task status | [`docs/pipeline.md`](docs/pipeline.md) |
+| Before working on any pipeline stage; for design rationale, constraints, or phase context | [`docs/pipeline.md`](docs/pipeline.md) |
+| Checking task status, assignments, or what work remains | [GitHub issues](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues) (M1–M4 milestones) |
 | Before reading or writing any file path, working on config/path logic, or understanding the data hierarchy | [`docs/data-layout.md`](docs/data-layout.md) |
 | Before working on plate reconstruction, raster generation, model file setup, or adding a new reconstruction | [`docs/reconstruction.md`](docs/reconstruction.md) |
 | Before working on mantle feature extraction, G-ADOPT outputs, or `00d-extract_mantle_features.ipynb` | [`docs/mantle-extraction.md`](docs/mantle-extraction.md) |
 | When tracing the provenance of source datasets or the scientific rationale behind original repo design decisions |[`docs/Alfonso2024.md`](docs/Alfonso2024.md) |
+
+---
+
+## GitHub Issues
+
+The issue tracker is the **single source of truth for task status, assignments, and progress.** Use it in every Copilot session rather than inferring status from `docs/pipeline.md`.
+
+**For context gathering:**
+- Milestone pages show phase structure: [M1](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/1) (Phase 0), [M2](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/2) (Phases 1A/1B/2), [M3](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/3) (Phases 3–4), [M4](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/4) (Phase 5)
+- Issue [#20](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/20) is the Phase 2 gate — do not work on M3/M4 issues until #20 is closed
+- Labels filter by type: `infrastructure`, `data`, `feature`, `modelling`, `investigation`
+- Each issue body states its pipeline task ID and prerequisites
+
+**For task execution:**
+- Read the issue body; it is always more detailed than the title
+- Check issue comments for blocker resolutions or interim findings
+- Reference issues in commits via `Fixes #N`
+
+**Docs vs. issues — what goes where:**
+- Task progress, status, blockers → issue comments and open/closed state
+- Design rationale, architectural constraints, resolved decisions → `docs/pipeline.md`
+- Scientific decisions pending resolution → relevant `docs/` file as `**UNRESOLVED:**` block
 
 ## Ending Sessions
 
 At the end of every coding session, perform the following steps **before** yielding back to the
 user:
 
-1. **Update `docs/pipeline.md` checkboxes.** For every task completed during this session, change
-   `- [ ]` to `- [x]`. Do not mark tasks as done unless they are fully implemented and verified.
+1. **Close completed GitHub issues.** For every task completed during this session, close the corresponding issue on GitHub. Reference the issue number in any commit message (`Fixes #N`). Do not close an issue unless the work is fully implemented and verified.
 
 2. **Record any new bugs or discovered issues.** If a previously unknown bug was found, add it to
    the "Known Critical Bugs" section above with the same format as existing entries. If it was
@@ -149,7 +171,7 @@ user:
    `**UNRESOLVED:**` block so context is preserved for the next session.
 
 4. **Write a brief session summary.** At the end of your final message, include:
-   - What was completed (reference `docs/pipeline.md` task IDs, e.g. "Completed 0.1, 0.2")
+   - What was completed (reference GitHub issue numbers, e.g. "Closed #1, #2")
    - Any blockers encountered and their status
    - The recommended next action for the next session
 
