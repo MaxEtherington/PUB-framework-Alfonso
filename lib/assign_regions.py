@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from typing import (
     Sequence,
     Union,
@@ -9,13 +9,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry.base import BaseGeometry
 
-_DIRNAME = os.path.abspath(os.path.dirname(__file__))
-DEFAULT_REGIONS_FILE = os.path.join(
-    _DIRNAME,
-    "..",
-    "source_data",
-    "regions.shp",
-)
+DEFAULT_REGIONS_FILE = Path(__file__).parent.parent / "regions.geojson"
 
 
 def assign_regions(
