@@ -12,15 +12,13 @@ all_notebooks:
     max: 170
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation # TODO:
-  regions_filename: "regions.geojson"
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
   use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
   gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
+  use_extracted_data: true
   data_dir: data
-  use_extracted_data: True            
-  extracted_data_dir: extracted_data
-  raster_data_dir: rasters            # where 00a writes grids; default: data/input_data/{plate_model.name}/rasters # TODO:
-  output_dir: output # TODO:
+  output_dir: output
 
   n_jobs: 8
   verbose: False
@@ -144,11 +142,9 @@ defaults:
     regions_filename: "regions.geojson"
     use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
     gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
-    data_dir: data # TODO:
     use_extracted_data: True
-    extracted_data_dir: extracted_data # TODO:
     raster_data_dir: rasters            # where 00a writes grids; default: data/input_data/{plate_model.name}/rasters # TODO:
-    output_dir: output # TODO:
+    output_dir: output
     n_jobs: 4
     verbose: False
     random_seed: 1234
