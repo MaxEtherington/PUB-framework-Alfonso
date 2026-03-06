@@ -16,9 +16,9 @@ all_notebooks:
   use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
   gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
-  data_dir: data # TODO:
-  use_extracted_data: True
-  extracted_data_dir: extracted_data # TODO:
+  data_dir: data
+  use_extracted_data: True            
+  extracted_data_dir: extracted_data
   raster_data_dir: rasters            # where 00a writes grids; default: data/input_data/{plate_model.name}/rasters # TODO:
   output_dir: output # TODO:
 
