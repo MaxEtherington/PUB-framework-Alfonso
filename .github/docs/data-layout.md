@@ -82,18 +82,23 @@ data/extracted_data/
 
 ## How Config Keys Map to Paths
 
-`main.py` constructs all derived paths from config. Agents should never hardcode these paths.
+`run_notebooks.py` resolves `data_dir` and `output_dir` to absolute paths before writing
+`config/.run_config.yml`. Notebooks construct all other derived paths from these base keys.
+Agents should never hardcode these paths.
 
-| Derived path | Construction |
+| Derived path | Construction (from `folder_structure.ipynb`) |
 |---|---|
-| `raster_data_dir` | `data/input_data/{reconstruction.name}/grids/` |
-| `mantle_data_dir` | `data/input_data/{reconstruction.name}/mantle_outputs/{gadopt_run_name}/` |
-| `extracted_data_dir` | `data/extracted_data/{reconstruction.name}/{reference_feature}/{buffer_km}km_buffer/` |
-| `output_dir` | `outputs/{run_name}/` (inside repo, git-ignored) |
-| `plate_model_dir` | `data/input_data/{reconstruction.name}/plate_model/` |
+| `recon_data_dir` | `{data_dir}/{plate_model_name}/` |
+| `raster_data_dir` | `{data_dir}/{plate_model_name}/rasters/` |
+| `extracted_data_dir` | `{data_dir}/{plate_model_name}/extracted_data/{reference_feature}_{study_zone_buffer:.1f}_deg_buffer/` |
+| `plate_model_dir` | `{data_dir}/{plate_model_name}/{plate_model_dir}/` |
+| `mantle_data_dir` | `{data_dir}/{plate_model_name}/mantle_outputs/{gadopt_run_name}/` |
+| `output_dir` | `{output_dir}/{run_name}/` (inside repo, git-ignored) |
+| `deposits_dir` | `{data_dir}/deposits/` |
 
-The notebooks read `extracted_data_dir`, `raster_data_dir`, and `output_dir` from the resolved
-YAML config written by `main.py`. They should never construct these paths themselves.
+The notebooks construct derived paths themselves using these base keys from the resolved config.
+`run_notebooks.py` writes the resolved config to `config/.run_config.yml`; all notebooks read
+from that path.
 
 ## Deposit Database Schema
 
