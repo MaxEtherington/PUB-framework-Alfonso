@@ -73,7 +73,6 @@ def _prepare_config(config_path):
     # Write config snapshot for reproducibility
     output_dir = data.get("all_notebooks", {}).get("output_dir", "outputs")
     snapshot_dir = os.path.join(output_dir, run_name)
-    os.makedirs(snapshot_dir, exist_ok=True)
     snapshot_path = os.path.join(snapshot_dir, "config_snapshot.yml")
     shutil.copy2(config_path, snapshot_path)
 
