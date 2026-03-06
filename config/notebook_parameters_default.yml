@@ -1,3 +1,5 @@
+run_name: default
+
 all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
