@@ -4,6 +4,7 @@ plate_model*
 source_data*
 prepared_data*
 extracted_data*
+data*
 __pycache__
 .mypy_cache
 .vscode
