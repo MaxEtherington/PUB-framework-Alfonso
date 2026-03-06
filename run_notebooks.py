@@ -28,8 +28,8 @@ ALL_NOTEBOOKS = (
     "08-time_series",
 )
 
-# Path keys in all_notebooks that should be resolved to absolute paths
-_PATH_KEYS = ("output_dir", "extracted_data_dir", "regions_filename")
+# Path keys that should be resolved to absolute paths
+_PATH_KEYS = ("output_dir", "data_dir", "regions_filename")
 
 
 def _resolve_paths(data, root):
@@ -43,9 +43,6 @@ def _resolve_paths(data, root):
                 value = str(section[key])
                 if not os.path.isabs(value):
                     section[key] = os.path.join(root, value)
-        # Handle nested defaults section
-        if section_key == "defaults":
-            _resolve_paths(section, root)
 
 
 def _prepare_config(config_path):
@@ -60,7 +57,7 @@ def _prepare_config(config_path):
     with open(config_path, "r") as f:
         data = yaml.load(f)
 
-    run_name = data.get("run_name", "default")
+    run_name = data.get("all_notebooks", {}).get("run_name", "default")
 
     # Resolve relative paths to absolute
     _resolve_paths(data, REPO_ROOT)
@@ -71,7 +68,7 @@ def _prepare_config(config_path):
         yaml.dump(data, f)
 
     # Write config snapshot for reproducibility
-    output_dir = data.get("all_notebooks", {}).get("output_dir", "outputs")
+    output_dir = data.get("all_notebooks", {}).get("output_dir", "output")
     snapshot_dir = os.path.join(output_dir, run_name)
     snapshot_path = os.path.join(snapshot_dir, "config_snapshot.yml")
     shutil.copy2(config_path, snapshot_path)

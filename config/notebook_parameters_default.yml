@@ -1,23 +1,30 @@
-run_name: default
-
 all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  output_dir: outputs
-  use_extracted_data: True
-  extracted_data_dir: "extracted_data"
+  run_name: baseline                  # used as output directory name: outputs/{run_name}/
+  plate_model:
+    use_provided_plate_model: False
+    plate_model_name: clennett2020    # used to source plate model files via PMM & name file hierarchy # TODO:
+    plate_model_dir: plate_model      # default: data/input_data/{plate_model.name}/plate_model # TODO:
+  timespan:
+    min: 0
+    max: 170
+  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation # TODO:
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
+  use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
+  gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
+
+  use_extracted_data: true
+  data_dir: data
+  output_dir: output
+
   n_jobs: 8
   verbose: False
   random_seed: 1234
   overwrite_output: False
-  timespan:
-    min: 0
-    max: 170
-  plate_model:
-    use_provided_plate_model: True
-    plate_model_name:
-  regions_filename: "regions.geojson"
+
 
 notebook_00a:
   overwrite_output: False
@@ -106,21 +113,42 @@ defaults:
   # N.B. Do not modify this section.
   # If any values are missing from the above sections,
   # the default values here will be used.
+  # all_notebooks:
+  #   output_dir: "outputs"
+  #   use_extracted_data: False
+  #   extracted_data_dir: "extracted_data"
+  #   n_jobs: 4
+  #   verbose: False
+  #   random_seed: 1234
+  #   overwrite_output: True
+  #   timespan:
+  #     min: 0
+  #     max: 170
+  #   plate_model:
+  #     use_provided_plate_model: True
+  #     plate_model_name:
+  #   regions_filename: "regions.geojson"
   all_notebooks:
-    output_dir: "outputs"
-    use_extracted_data: False
-    extracted_data_dir: "extracted_data"
+    run_name: baseline                  # used as output directory name: outputs/{run_name}/
+    plate_model:
+      use_provided_plate_model: True
+      plate_model_name:                 # used to source plate model files via PMM & name file hierarchy # TODO:
+      plate_model_dir: plate_model      # default: data/input_data/{plate_model.name}/plate_model # TODO:
+    timespan:
+      min: 0
+      max: 170
+    reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+    study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation # TODO:
+    regions_filename: "regions.geojson"
+    use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
+    gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
+    use_extracted_data: True
+    raster_data_dir: rasters            # where 00a writes grids; default: data/input_data/{plate_model.name}/rasters # TODO:
+    output_dir: output
     n_jobs: 4
     verbose: False
     random_seed: 1234
     overwrite_output: True
-    timespan:
-      min: 0
-      max: 170
-    plate_model:
-      use_provided_plate_model: True
-      plate_model_name:
-    regions_filename: "regions.geojson"
   notebook_00a:
     cleanup: False
   notebook_00b:
@@ -132,3 +160,4 @@ defaults:
     outlier_contamination: 0.06
   notebook_07:
     grid_resolution: 100
+

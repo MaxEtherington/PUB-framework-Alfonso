@@ -1,14 +1,9 @@
-import os
 from copy import deepcopy
+from pathlib import Path
 
 from ruamel.yaml import YAML
 
-_DEFAULT_CONFIG = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "config",
-    ".run_config.yml",
-)
+_DEFAULT_CONFIG = Path(__file__).parent.parent / "config" / ".run_config.yml"
 
 
 def get_params(

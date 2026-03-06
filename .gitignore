@@ -17,4 +17,5 @@ supplementary_figures.zip
 .gitattributes
 *.log
 gmt.history
+test
 config/.run_config.yml
