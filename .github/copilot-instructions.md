@@ -1,0 +1,143 @@
+# Copilot Instructions — 4D PUB Classifier Project
+
+## Project Goal
+
+This project extends Alfonso et al.'s (2024) spatiotemporal Positive-Unlabelled Bagging (PUB)
+classifier for porphyry copper deposit prospectivity by adding mantle dynamic features extracted
+from G-ADOPT geodynamic model outputs (Zahirovic2022 reconstruction). The primary scientific
+question is whether mantle properties hold predictive power for mineral deposit formation, and
+whether improvements to the G-ADOPT model (e.g. craton representation) measurably affect
+prospectivity estimates.
+
+The pipeline must be **reconstruction-agnostic** — all paths are driven by config so runs under
+different plate models (Zahirovic2022, Cao2024, Clennett2020 baseline) are isolated and
+reproducible.
+
+---
+
+## Workspace Layout
+
+All repositories live under:
+`/Users/glados/Documents/Not Useless/Documents/University/2026/Honours/Data & Code/`
+
+| Repository | Role |
+|---|---|
+| `PUB-framework-Alfonso/` | **Primary working repo.** Pure Alfonso 2024 fork. All new code goes here. |
+| `PUB-framework-Ehsan/` | **Reference only.** NSW 2D prospectivity pipeline. Consult for: BayesSearchCV integration, deposit size-class weighting, two-stage PUB→RF design, `lib_mpm.py` feature extractors. |
+| `Mather2025-SeafloorAnomalies/` | **Reference only.** Ben Mather's modified Alfonso pipeline. Consult for: seafloor anomaly feature augmentation (`seafloor-anomalies/07-Input-to-PU-learn.ipynb`), temporal buffer logic, `stellar-data-mining/lib/` for cross-comparison. |
+| `mantle-processing/` | **Proof-of-concept.** Contains G-ADOPT netCDF processing scripts and the `point-samping.ipynb` prototype for mantle feature extraction. This is the basis for the new `lib/extract_mantle_features.py`. Has known bugs — see `docs/mantle-extraction.md`. |
+| `cu-deposits-preprocessing/` | **Deposit database.** Source of `GlobalUnifiedDeposits.csv` and the preprocessing pipeline that assigns `Plate_ID`, `Recon_Age_Ma`, and corrects plate-age inconsistencies. Deposit schema documented in `docs/data-layout.md`. |
+| `GPlates data/` | Plate model files. Zahirovic2022 reconstruction files used by this project live here or under `data/input_data/zahirovic2022/`. |
+
+---
+
+## This Repo — Structure
+
+### Notebooks (run in order)
+| Notebook | Purpose |
+|---|---|
+| `00a-generate_data.ipynb` | Generate all input rasters from scratch (seafloor age, sediment, carbonate, crustal thickness, CO2, erosion). Requires submodules. Skip by downloading from Zenodo 14010839. |
+| `00b-extract_training_data.ipynb` | Extract kinematic + raster features at deposit and unlabelled point locations → `training_data_global.csv` |
+| `00c-extract_grid_data.ipynb` | Same extraction on a regular prediction grid → `grid_data.csv` |
+| `00d-extract_mantle_features.ipynb` | Appends G-ADOPT mantle features to training and grid data. ([#24](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/24)) |
+| `01-create_classifiers.ipynb` | Train PUB classifier + SVM. Feature selection, cross-validation. |
+| `02-create_probability_maps.ipynb` | Apply trained classifier to grid data → probability netCDF maps. |
+| `03–08` | Animations, erosion, preservation, partial dependence, time series. |
+
+### Config System
+All parameters are read from `notebook_parameters_default.yml` via `lib.load_params.get_params()`.
+Per-run overrides live in `config/` and are merged by `main.py` before notebook execution.
+
+---
+
+## Navigation — Which Files to Consult
+
+| Task | Files to read first |
+|---|---|
+| Config or path logic | `notebook_parameters_default.yml`, `lib/load_params.py`, `docs/data-layout.md` |
+| Plate reconstruction, model loading | `lib/plate_models.py`, `lib/misc.py`, `docs/reconstruction.md` |
+| Raster generation (`00a`) | `00a-generate_data.ipynb`, `lib/extract_data/`, `docs/reconstruction.md` |
+| Training data extraction (`00b/c`) | `00b-extract_training_data.ipynb`, `lib/calculate_convergence.py`, `lib/coregister_ocean_rasters.py`, `lib/combine_point_data.py` |
+| Mantle feature extraction (`00d`) | `mantle-processing/point-samping.ipynb`, `docs/mantle-extraction.md` |
+| PU classifier, training | `lib/pu.py`, `01-create_classifiers.ipynb` |
+| Cross-validation | `lib/cv.py`, `01-create_classifiers.ipynb` |
+| Feature selection / correlation | `lib/feature_selection.py`, `01-create_classifiers.ipynb` |
+| Study area polygons, unlabelled points | `lib/create_study_area_polygons.py`, `lib/generate_unlabelled_points.py` |
+| Deposit database, schema | `cu-deposits-preprocessing/src/deposit_data_preprocessing/`, `docs/data-layout.md` |
+| Bayesian hyperparameter tuning (future) | `PUB-framework-Ehsan/MPM_Porphyry_NSW.ipynb`, `PUB-framework-Ehsan/lib_mpm.py` |
+| Mather seafloor anomaly features (reference) | `Mather2025-SeafloorAnomalies/seafloor-anomalies/07-Input-to-PU-learn.ipynb` |
+| Probability map generation | `02-create_probability_maps.ipynb`, `lib/pu.py` (`create_probability_grids`) |
+
+---
+
+## Known Critical Bugs (fix before any other work)
+
+1. **`lib/assign_regions.py`** — broken default path. Fix and details in [#1](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/1).
+
+2. **`submodules/` is uninitialised** — fix in [#2](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/2). Required before `00a`.
+
+3. **`00a-generate_data.ipynb`** — `overwrite` and `cleanup` are hardcoded to `False` in a cell
+   immediately after reading them from params, silently overriding the YAML config.
+
+4. **`run_notebooks.py`** — stale `ALL_NOTEBOOKS` filenames; tracked in [#8](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/8). Pass filenames explicitly for now.
+
+---
+
+## Docs Reference
+
+| Condition | File |
+|---|---|
+| Before working on any pipeline stage; for design rationale, constraints, or phase context | [`docs/pipeline.md`](docs/pipeline.md) |
+| Checking task status, assignments, or what work remains | [GitHub issues](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues) (M1–M4 milestones) |
+| Before reading or writing any file path, working on config/path logic, or understanding the data hierarchy | [`docs/data-layout.md`](docs/data-layout.md) |
+| Before working on plate reconstruction, raster generation, model file setup, or adding a new reconstruction | [`docs/reconstruction.md`](docs/reconstruction.md) |
+| Before working on mantle feature extraction, G-ADOPT outputs, or `00d-extract_mantle_features.ipynb` | [`docs/mantle-extraction.md`](docs/mantle-extraction.md) |
+| When tracing the provenance of source datasets or the scientific rationale behind original repo design decisions |[`docs/Alfonso2024.md`](docs/Alfonso2024.md) |
+
+---
+
+## GitHub Issues
+
+The issue tracker is the **single source of truth for task status, assignments, and progress.** Use it in every Copilot session rather than inferring status from `docs/pipeline.md`.
+
+**For context gathering:**
+- Milestone pages show phase structure: [M1](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/1) (Phase 0), [M2](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/2) (Phases 1A/1B/2), [M3](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/3) (Phases 3–4), [M4](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/4) (Phase 5)
+- Issue [#20](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/20) is the Phase 2 gate — do not work on M3/M4 issues until #20 is closed
+- Labels filter by type: `infrastructure`, `data`, `feature`, `modelling`, `investigation`
+- Each issue body states its pipeline task ID and prerequisites
+
+**For task execution:**
+- Read the issue body; it is always more detailed than the title
+- Check issue comments for blocker resolutions or interim findings
+- Reference issues in commits via `Fixes #N`
+
+**Docs vs. issues — what goes where:**
+- Task progress, status, blockers → issue comments and open/closed state
+- Design rationale, architectural constraints, resolved decisions → `docs/pipeline.md`
+- Scientific decisions pending resolution → relevant `docs/` file as `**UNRESOLVED:**` block
+
+## Ending Sessions
+
+At the end of every coding session, perform the following steps **before** yielding back to the
+user:
+
+1. **Close completed GitHub issues.** For every task completed during this session, close the corresponding issue on GitHub. Reference the issue number in any commit message (`Fixes #N`). Do not close an issue unless the work is fully implemented and verified.
+
+2. **Record any new bugs or discovered issues.** If a previously unknown bug was found, add it to
+   the "Known Critical Bugs" section above with the same format as existing entries. If it was
+   fixed, remove or cross-out the entry.
+
+3. **Record any unresolved scientific or design decisions.** If work was blocked or deferred due
+   to a decision that requires user input (not a coding decision), add it to the relevant doc
+   (`docs/reconstruction.md`, `docs/mantle-extraction.md`, etc.) as a clearly marked
+   `**UNRESOLVED:**` block so context is preserved for the next session.
+
+4. **Write a brief session summary.** At the end of your final message, include:
+   - What was completed (reference GitHub issue numbers, e.g. "Closed #1, #2")
+   - Any blockers encountered and their status
+   - The recommended next action for the next session
+
+5. **Do not leave half-written code.** If a file was opened and edited, ensure it is in a
+   syntactically valid and importable state when the session ends. Incomplete implementations
+   should be guarded with a `raise NotImplementedError` and a comment explaining what remains.
+At the end of any session involving a significant decision, architectural change, or resolved ambiguity, propose updates to the relevant docs/ file and to this file if needed. Do not push updates without user confirmation.

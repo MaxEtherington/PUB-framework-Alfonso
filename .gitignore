@@ -11,9 +11,12 @@ subduction_data*.csv
 grid_data.csv*
 Clennett_data
 outputs*
+output/
+config/.run_config.yml
 figures.zip
 supplementary_figures.zip
 *.pdf
 .gitattributes
 *.log
 gmt.history
+test

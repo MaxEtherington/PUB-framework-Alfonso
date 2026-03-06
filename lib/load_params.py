@@ -1,13 +1,9 @@
-import os
 from copy import deepcopy
+from pathlib import Path
 
 from ruamel.yaml import YAML
 
-_DEFAULT_CONFIG = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "notebook_parameters_default.yml",
-)
+_DEFAULT_CONFIG = Path(__file__).parent.parent / "config" / "notebook_parameters_default.yml"
 
 
 def get_params(
