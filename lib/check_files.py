@@ -14,7 +14,7 @@ DEFAULT_MODEL_DIR = os.path.join(DIRNAME, "..", "plate_model")
 DEFAULT_SOURCE_DATA_DIR = os.path.join(DIRNAME, "..", "data")
 
 _DOI_URL = "https://doi.org/10.5281/zenodo.8157690"
-_ZENODO_URL = "https://zenodo.org/record/8157691"
+_ZENODO_URL = "https://zenodo.org/record/14010839"
 
 
 def check_prepared_data(
