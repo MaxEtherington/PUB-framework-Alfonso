@@ -16,7 +16,7 @@ dependencies:
   - matplotlib
   - moviepy
   - netcdf4
-  - numpy<2.2  # required by pulearn
+  - numpy
   - pandas
   - papermill
   - pip
@@ -31,11 +31,11 @@ dependencies:
   - rioxarray
   - ruamel.yaml
   - scikit-image
-  - scikit-learn<1.6  # required by pulearn
-  - scipy<1.15
-  - setuptools<81
+  - scikit-learn
+  - scipy
+  - setuptools
   - shapely
-  - six>=1.16,<1.17  # required by pulearn
+  - six
   - stripy
   - tqdm
   - xarray

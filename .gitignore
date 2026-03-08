@@ -21,3 +21,4 @@ supplementary_figures.zip
 *.log
 gmt.history
 test
+*_output.ipynb
