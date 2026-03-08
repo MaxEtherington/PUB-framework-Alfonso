@@ -15,7 +15,7 @@ all_notebooks:
   use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
   gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
-  use_extracted_data: False
+  use_extracted_data: True
   data_dir: data
   output_dir: output
 
@@ -112,36 +112,18 @@ defaults:
   # N.B. Do not modify this section.
   # If any values are missing from the above sections,
   # the default values here will be used.
-  # all_notebooks:
-  #   output_dir: "outputs"
-  #   use_extracted_data: False
-  #   extracted_data_dir: "extracted_data"
-  #   n_jobs: 4
-  #   verbose: False
-  #   random_seed: 1234
-  #   overwrite_output: True
-  #   timespan:
-  #     min: 0
-  #     max: 170
-  #   plate_model:
-  #     use_provided_plate_model: True
-  #     plate_model_name:
-  #   regions_filename: "regions.geojson"all_notebooks:
-  # These parameters will be applied to all notebooks.
-  # If one of these parameters also appears in the corresponding
-  # notebook section, it can be specified there on a per-notebook basis.
-  run_name: default                  # used as output directory name: outputs/{run_name}/
+  run_name: default
   plate_model:
     use_provided_plate_model: True
-    plate_model_name: alfonso2024_default     # used to source plate model files via PMM & name file hierarchy # TODO:
+    plate_model_name: alfonso2024_default
   timespan:
     min: 0
     max: 170
-  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
-  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation # TODO:
-  regions_filename: "regions.geojson" # optional regions file, saved in data/
-  use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
-  gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
+  reference_feature: trenches
+  study_zone_buffer: 6.0 # degrees
+  regions_filename: "regions.geojson"
+  use_mantle_features: False
+  gadopt_run_name:
 
   use_extracted_data: True
   data_dir: data
