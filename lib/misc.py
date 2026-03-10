@@ -395,8 +395,9 @@ def reconstruct_by_topologies(
                 raise RuntimeError(
                     f"Reconstruction failed at time {t}"
                 ) from err
-            reconstructed_points = points.reconstruct(
+            new_lons, new_lats = points.reconstruct(
                 time=t - 1,
+                return_array=True
             )
             # reconstructed_points = reconstruct_points(
             #     rotation_model,
@@ -407,7 +408,7 @@ def reconstruct_by_topologies(
             #     points=points,
             #     detect_collisions=None,
             # )
-            new_lats, new_lons = zip(*[i.to_lat_lon() for i in reconstructed_points])
+            # new_lats, new_lons = zip(*[i.to_lat_lon() for i in reconstructed_points])
             for i, new_lon, new_lat in zip(subset.index, new_lons, new_lats):
                 data.at[i, new_lon_col] = new_lon
                 data.at[i, new_lat_col] = new_lat
