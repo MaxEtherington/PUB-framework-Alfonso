@@ -20,11 +20,6 @@ with warnings.catch_warnings():
         PlotTopologies,
         Raster,
     )
-    from gplately.plot import (
-        SubductionTeeth,
-        shapelify_feature_lines,
-    )
-    from gplately.plot import _meridian_from_ax
     from gplately.tools import lonlat2xyz
 from joblib import (
     Parallel,
@@ -1050,27 +1045,8 @@ def _prepare_map(
         ax=ax,
         **RIDGES_KW,
     )
-    # gplot.plot_subduction_teeth(
-    #     ax=ax,
-    #     **TEETH_KW,
-    # )
-
     ax.set_global()
-
-    SubductionTeeth(
-        ax=ax,
-        left=shapelify_feature_lines(
-            gplot.trench_left,
-            tessellate_degrees=0.1,
-            central_meridian=_meridian_from_ax(ax),
-        ),
-        right=shapelify_feature_lines(
-            gplot.trench_right,
-            tessellate_degrees=0.1,
-            central_meridian=_meridian_from_ax(ax),
-        ),
-        **TEETH_KW,
-    )
+    gplot.plot_subduction_teeth(ax=ax, **TEETH_KW)
 
     if time is not None:
         ax.set_title(f"{time:0.0f} Ma", fontsize=TITLESIZE)

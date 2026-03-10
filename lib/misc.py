@@ -13,8 +13,7 @@ import pandas as pd
 import pygplates
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
-    from gplately import EARTH_RADIUS
-    from gplately.reconstruction import reconstruct_points
+    from gplately import EARTH_RADIUS, reconstruct_points
     from gplately.tools import plate_isotherm_depth
     from ptt.utils.points_in_polygons import find_polygons
 from pandas.errors import PerformanceWarning
