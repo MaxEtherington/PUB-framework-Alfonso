@@ -13,7 +13,7 @@ import pandas as pd
 import pygplates
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
-    from gplately import EARTH_RADIUS, reconstruct_points
+    from gplately import EARTH_RADIUS, Points
     from gplately.tools import plate_isotherm_depth
     from ptt.utils.points_in_polygons import find_polygons
 from pandas.errors import PerformanceWarning
@@ -384,20 +384,29 @@ def reconstruct_by_topologies(
             lons = subset[old_lon_col]
             lats = subset[old_lat_col]
             try:
-                points = pygplates.MultiPointOnSphere(np.column_stack((lats, lons)))
+                # points = pygplates.MultiPointOnSphere(np.column_stack((lats, lons)))
+                points = Points(
+                    plate_reconstruction=plate_reconstruction,
+                    lons=lons,
+                    lats=lats,
+                    time=t
+                )
             except pygplates.InsufficientPointsForMultiPointConstructionError as err:
                 raise RuntimeError(
                     f"Reconstruction failed at time {t}"
                 ) from err
-            reconstructed_points = reconstruct_points(
-                rotation_model,
-                topological_features,
-                reconstruction_begin_time=t,
-                reconstruction_end_time=t - 1,
-                reconstruction_time_interval=1.0,
-                points=points,
-                detect_collisions=None,
+            reconstructed_points = points.reconstruct(
+                time=t - 1,
             )
+            # reconstructed_points = reconstruct_points(
+            #     rotation_model,
+            #     topological_features,
+            #     reconstruction_begin_time=t,
+            #     reconstruction_end_time=t - 1,
+            #     reconstruction_time_interval=1.0,
+            #     points=points,
+            #     detect_collisions=None,
+            # )
             new_lats, new_lons = zip(*[i.to_lat_lon() for i in reconstructed_points])
             for i, new_lon, new_lat in zip(subset.index, new_lons, new_lats):
                 data.at[i, new_lon_col] = new_lon
