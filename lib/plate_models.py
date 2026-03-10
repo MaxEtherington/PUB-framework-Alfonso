@@ -13,7 +13,13 @@ from plate_model_manager import PlateModelManager
 from .check_files import check_plate_model  # re-export
 from .misc import filter_topological_features
 
-PMM = PlateModelManager()
+import requests # Check for internet connectivity
+try:
+    res = requests.get("http://www.google.com", timeout=5)
+    if res.status_code == 200:
+        PMM = PlateModelManager()
+except:
+    PMM = None
 
 
 def _fetch(model_name: str, model_dir: str = "plate_model"):
