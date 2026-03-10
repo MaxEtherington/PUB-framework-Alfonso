@@ -22,3 +22,6 @@ supplementary_figures.zip
 gmt.history
 test
 *_output.ipynb
+*.lock*
+*.old
+scripts*
