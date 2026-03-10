@@ -1,4 +1,4 @@
-name: pub-alfonso
+name: prospectivity
 channels:
   - conda-forge
   - defaults
@@ -45,4 +45,3 @@ dependencies:
       - pulearn==0.1.1
       - six==1.16.0
       - slabdip==4.2.2
-prefix: /Users/glados/opt/anaconda3/envs/pub-alfonso
