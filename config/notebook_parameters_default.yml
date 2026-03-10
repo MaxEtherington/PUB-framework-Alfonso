@@ -59,6 +59,8 @@ notebook_01:
   overwrite_output:
   use_same_features: True
   automatic_feature_selection: False
+  create_svm: True
+  create_regional_models: True
 
 notebook_02:
   output_dir:
