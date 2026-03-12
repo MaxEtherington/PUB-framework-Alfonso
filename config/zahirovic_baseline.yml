@@ -2,13 +2,13 @@ all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  run_name: alfonso-baseline                  # used as output directory name: outputs/{run_name}/
+  run_name: zahirovic-baseline                  # used as output directory name: outputs/{run_name}/
   plate_model:
-    use_provided_plate_model: True
-    plate_model_name: alfonso2024_default    # used to source plate model files via PMM & name file hierarchy
+    use_provided_plate_model: False
+    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name file hierarchy
   timespan:
     min: 0
-    max: 170
+    max: 400
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
   regions_filename: "regions.geojson" # optional regions file, saved in data/
@@ -39,7 +39,7 @@ notebook_00b:
   overwrite_output:
   extracted_data_dir:
   regions_filename:
-  deposits_filename: "deposits.csv"
+  deposits_filename: "deposits-Etherington.csv"
   num_unlabelled: 200
 
 notebook_00c:
