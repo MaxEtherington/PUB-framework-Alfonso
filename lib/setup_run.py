@@ -9,6 +9,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
 
 
+def _has_plate_model_files(model_dir: Path) -> bool:
+    """Return True if the directory appears to contain a usable plate model."""
+    if not model_dir.is_dir():
+        return False
+    has_rotations = any(model_dir.rglob("*.rot"))
+    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
+    return has_rotations and has_features
+
+
 def _resolve_config_paths(config):
     """Resolve relative data_dir and output_dir to absolute paths (repo-root-relative)."""
     all_nb = config.get("all_notebooks", {})
@@ -85,12 +94,14 @@ def run_setup(config_path):
     plate_model_dir = recon_data_dir / "plate_model"
     run_output_dir = output_dir / run_name
 
-    dirs_to_create = (
+    dirs_to_create = [
         data_dir,
         recon_data_dir,
-        plate_model_dir,
         run_output_dir,
-    )
+    ]
+    if not use_provided_plate_model:
+        dirs_to_create.append(plate_model_dir)
+
     for directory in dirs_to_create:
         try:
             directory.mkdir(parents=True, exist_ok=True)
@@ -103,7 +114,17 @@ def run_setup(config_path):
     print(f"Output dir:      {run_output_dir}", file=sys.stderr)
 
     if use_provided_plate_model:
-        check_plate_model(str(plate_model_dir), verbose=True)
+        # If model_dir already exists but is empty/incomplete, force a fresh fetch.
+        force_download = not _has_plate_model_files(plate_model_dir)
+        check_plate_model(
+            str(plate_model_dir),
+            verbose=True,
+            force=force_download,
+        )
+        if not _has_plate_model_files(plate_model_dir):
+            raise RuntimeError(
+                f"Provided plate model download did not produce expected files: {plate_model_dir}"
+            )
         print("Plate model:     provided model ready", file=sys.stderr)
     else:
         from .plate_models import get_plate_reconstruction
