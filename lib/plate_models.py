@@ -1,9 +1,9 @@
 import glob
 import os
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
-import pygplates
 from gplately import (
     PlateReconstruction,
     PlotTopologies,
@@ -14,13 +14,20 @@ from .check_files import check_plate_model  # re-export
 from .misc import filter_topological_features
 
 import requests # Check for internet connectivity
-try:
-    res = requests.get("http://www.google.com", timeout=5)
-    if res.status_code == 200:
-        PMM = PlateModelManager()
-except(Exception):
-    PMM = None
 
+def has_internet_connectivity() -> bool:
+    try:
+        res = requests.get("http://www.google.com", timeout=5)
+        if res.status_code == 200:
+            return True
+    except(Exception):
+        return False
+    return False
+
+if has_internet_connectivity():
+    PMM = PlateModelManager()
+else:
+    PMM = None
 
 def _fetch(model_name: str, model_dir: str = "plate_model"):
     try:
@@ -43,6 +50,13 @@ def _fetch(model_name: str, model_dir: str = "plate_model"):
             "Please check your internet connection or use local files."
         )
 
+def has_plate_model_files(model_dir: Path|str) -> bool:
+    """Return True if the directory appears to contain a usable plate model."""
+    if not Path(model_dir).is_dir():
+        return False
+    has_rotations = any(model_dir.rglob("*.rot"))
+    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
+    return has_rotations and has_features
 
 def get_plate_reconstruction(
     model_name: Optional[str] = None,
@@ -52,7 +66,9 @@ def get_plate_reconstruction(
 ):
     """Get a `PlateReconstruction` object from a model name and directory.
 
-    If `model_name` is `None`, use local files in `model_dir`.
+    If `model_name` is `None`, use local files in `model_dir`. If there is
+    no internet connection, function will assume the plate model is already
+    downloaded.
 
     Parameters
     ----------
@@ -81,6 +97,9 @@ def get_plate_reconstruction(
     ValueError
         If `model_name` is not recognised by PMM.
     """
+    if has_plate_model_files() and not has_internet_connectivity():
+        model_name = None
+    
     if model_name is None:
         globs = ["*.gpml", "*.gpmlz"]
         rotation_files = []

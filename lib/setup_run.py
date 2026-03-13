@@ -4,18 +4,10 @@ import sys
 from ruamel.yaml import YAML
 
 from .check_files import check_plate_model
+from .plate_models import has_plate_model_files
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
-
-
-def _has_plate_model_files(model_dir: Path) -> bool:
-    """Return True if the directory appears to contain a usable plate model."""
-    if not model_dir.is_dir():
-        return False
-    has_rotations = any(model_dir.rglob("*.rot"))
-    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
-    return has_rotations and has_features
 
 
 def _resolve_config_paths(config):
@@ -115,13 +107,13 @@ def run_setup(config_path):
 
     if use_provided_plate_model:
         # If model_dir already exists but is empty/incomplete, force a fresh fetch.
-        force_download = not _has_plate_model_files(plate_model_dir)
+        force_download = not has_plate_model_files(plate_model_dir)
         check_plate_model(
             str(plate_model_dir),
             verbose=True,
             force=force_download,
         )
-        if not _has_plate_model_files(plate_model_dir):
+        if not has_plate_model_files(plate_model_dir):
             raise RuntimeError(
                 f"Provided plate model download did not produce expected files: {plate_model_dir}"
             )
