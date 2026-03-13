@@ -18,7 +18,7 @@ try:
     res = requests.get("http://www.google.com", timeout=5)
     if res.status_code == 200:
         PMM = PlateModelManager()
-except:
+except(Exception):
     PMM = None
 
 
@@ -103,7 +103,7 @@ def get_plate_reconstruction(
         )
 
     else:
-        model = _fetch(model_name, os.path.join(model_dir, ".downloaded"))
+        model = _fetch(model_name, model_dir)
         rotation_files = model.get_rotation_model()
         topology_files = model.get_layer("Topologies")
         static_polygons = model.get_layer("StaticPolygons")
@@ -166,7 +166,7 @@ def get_plot_topologies(
     if plate_reconstruction is None:
         plate_reconstruction = get_plate_reconstruction(
             model_name=model_name,
-            model_dir=os.path.join(model_dir, ".downloaded"),
+            model_dir=model_dir,
             anchor_plate_id=anchor_plate_id,
             filter_topologies=filter_topologies,
         )
@@ -181,7 +181,7 @@ def get_plot_topologies(
                 if "coast" in basename.lower():
                     coastlines.append(filename)
     else:
-        model = _fetch(model_name, os.path.join(model_dir, ".downloaded"))
+        model = _fetch(model_name, model_dir)
         coastlines = model.get_layer("Coastlines")
 
     return PlotTopologies(
