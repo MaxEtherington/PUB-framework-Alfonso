@@ -95,6 +95,11 @@ def _resolve_notebook_names(names):
 
 
 def _main(args):
+    if args.setup:
+        from lib.setup_run import run_setup
+        run_setup(args.config)
+        return 0
+
     if args.list_defaults:
         print(
             "Available notebooks:",
@@ -166,6 +171,12 @@ if __name__ == "__main__":
         help="list available notebook codes",
         action="store_true",
         dest="list_defaults",
+    )
+    parser.add_argument(
+        "--setup",
+        help="prepare run directories and plate model, then exit",
+        action="store_true",
+        dest="setup",
     )
     args = parser.parse_args()
     _main(args)
