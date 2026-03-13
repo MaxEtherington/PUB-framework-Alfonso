@@ -23,19 +23,25 @@ except:
 
 
 def _fetch(model_name: str, model_dir: str = "plate_model"):
-    if model_name not in PMM.get_available_model_names():
-        raise ValueError(
-            f"Invalid plate model name: {model_name}"
+    try:
+        if model_name not in PMM.get_available_model_names():
+            raise ValueError(
+                f"Invalid plate model name: {model_name}"
+            )
+        model = PMM.get_model(
+            model_name,
+            data_dir=model_dir,
         )
-    model = PMM.get_model(
-        model_name,
-        data_dir=model_dir,
-    )
-    if model is None:
-        raise ValueError(
-            f"Invalid plate model name: {model_name}"
+        if model is None:
+            raise ValueError(
+                f"Invalid plate model name: {model_name}"
+            )
+        return model
+    except(AttributeError):
+        raise RuntimeError(
+            "PlateModelManager is attempting to download a plate model while offline. "
+            "Please check your internet connection or use local files."
         )
-    return model
 
 
 def get_plate_reconstruction(
