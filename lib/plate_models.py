@@ -97,7 +97,7 @@ def get_plate_reconstruction(
     ValueError
         If `model_name` is not recognised by PMM.
     """
-    if has_plate_model_files() and not has_internet_connectivity():
+    if has_plate_model_files(model_dir) and not has_internet_connectivity():
         model_name = None
     
     if model_name is None:
