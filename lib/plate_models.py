@@ -1,5 +1,6 @@
 import glob
 import os
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
@@ -19,6 +20,15 @@ def cache_plate_model(model_name: str, model_dir: str):
     _ = data_server.get_plate_reconstruction_files()
     _ = data_server.get_topology_geometries() 
     return
+
+def has_plate_model_files(model_dir: Path | str) -> bool:
+    """Return True if the directory appears to contain a usable plate model."""
+    model_dir = Path(model_dir)
+    if not model_dir.is_dir():
+        return False
+    has_rotations = any(model_dir.rglob("*.rot"))
+    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
+    return has_rotations and has_features
 
 def get_plate_reconstruction(
     model_name: Optional[str] = None,
@@ -65,7 +75,7 @@ def get_plate_reconstruction(
         static_polygons = []
         for g in globs:
             all_filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-            topology_files.extend(glob.glob(os.path.join(model_dir, g)))
+            topology_files.extend(all_filenames)
             # topology_files.extend(filenames)
             # rotation_files.extend(filenames)
             static_polygons.extend(
@@ -84,8 +94,15 @@ def get_plate_reconstruction(
     if model_name is None:
         rotation_files, topology_files, static_polygons = _find_model_files()
     else:
-        server = DataServer(model_name, data_dir=model_dir)
-        rotation_files, topology_files, static_polygons = server.get_plate_reconstruction_files()
+        try:
+            server = DataServer(model_name, data_dir=model_dir)
+            rotation_files, topology_files, static_polygons = server.get_plate_reconstruction_files()
+        except Exception:
+            # If DataServer fetch fails but local model files exist, fall back to local files.
+            if not has_plate_model_files(model_dir):
+                raise
+            rotation_files, topology_files, static_polygons = _find_model_files()
+        
 
     if filter_topologies:
         topology_features = filter_topological_features(topology_files)
@@ -174,10 +191,19 @@ def get_plot_topologies(
         )
     if model_name is None:
         coastlines, continents, COBs = _find_plate_topologies()
-    # Collect named reconstruction with DataServer
     else:
-        server = DataServer(model_name, model_dir)
-        coastlines, continents, COBs = server.get_topology_geometries()
+        try:
+            server = DataServer(model_name, data_dir=model_dir)
+            coastlines, continents, COBs = server.get_topology_geometries()
+            if coastlines is None:
+                coastlines = []
+            if continents is None:
+                continents = coastlines
+        except Exception:
+            # If DataServer fetch fails but local model files exist, fall back to local files.
+            if not has_plate_model_files(model_dir):
+                raise
+            coastlines, continents, COBs = _find_plate_topologies()
 
     return PlotTopologies(
         plate_reconstruction=plate_reconstruction, 
