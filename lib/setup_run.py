@@ -4,7 +4,6 @@ import sys
 from ruamel.yaml import YAML
 
 from .check_files import check_plate_model
-from .plate_models import has_plate_model_files
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
@@ -106,26 +105,20 @@ def run_setup(config_path):
     print(f"Output dir:      {run_output_dir}", file=sys.stderr)
 
     if use_provided_plate_model:
-        # If model_dir already exists but is empty/incomplete, force a fresh fetch.
-        force_download = not has_plate_model_files(plate_model_dir)
+        # Setup is being run; force a fresh fetch.
         check_plate_model(
             str(plate_model_dir),
             verbose=True,
-            force=force_download,
+            force=True,
         )
-        if not has_plate_model_files(plate_model_dir):
-            raise RuntimeError(
-                f"Provided plate model download did not produce expected files: {plate_model_dir}"
-            )
         print("Plate model:     provided model ready", file=sys.stderr)
     else:
-        from .plate_models import get_plate_reconstruction
-
-        # Trigger PMM fetch into the configured model directory.
-        get_plate_reconstruction(
+        from .plate_models import cache_plate_model
+        # Trigger DataServer fetch into the configured model directory.
+        cache_plate_model(
             model_name=plate_model_name,
             model_dir=str(plate_model_dir),
         )
-        print(f"Plate model:     PMM model '{plate_model_name}' ready", file=sys.stderr)
+        print(f"Plate model:     DataServer model '{plate_model_name}' ready", file=sys.stderr)
 
     print("Setup complete.", file=sys.stderr)

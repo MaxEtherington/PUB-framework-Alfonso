@@ -8,6 +8,7 @@ data*
 output*
 prepared_data*
 scripts*
+playground*
 
 *.pdf
 *.log
@@ -16,7 +17,6 @@ scripts*
 *.old
 *.run_config.yml
 
-playground.ipynb
 
 !data/deposits*
 !data/regions.geojson

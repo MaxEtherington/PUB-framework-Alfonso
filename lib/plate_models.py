@@ -1,58 +1,24 @@
 import glob
 import os
-from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Optional
 
 from gplately import (
     PlateReconstruction,
     PlotTopologies,
+    DataServer
 )
-from plate_model_manager import PlateModelManager
 
 from .check_files import check_plate_model  # re-export
 from .misc import filter_topological_features
 
-PMM = None
-
-
-def _get_pmm() -> PlateModelManager:
-    """Lazily initialize PlateModelManager to avoid brittle import-time checks."""
-    global PMM
-    if PMM is None:
-        PMM = PlateModelManager()
-    return PMM
-
-def _fetch(model_name: str, model_dir: str = "plate_model"):
-    try:
-        pmm = _get_pmm()
-        if model_name not in pmm.get_available_model_names():
-            raise ValueError(
-                f"Invalid plate model name: {model_name}"
-            )
-        model = pmm.get_model(
-            model_name,
-            data_dir=model_dir,
-        )
-        if model is None:
-            raise ValueError(
-                f"Invalid plate model name: {model_name}"
-            )
-        return model
-    except Exception as exc:
-        raise RuntimeError(
-            "PlateModelManager could not fetch the requested plate model. "
-            "Please check your internet connection, model name, or use local files."
-        ) from exc
-
-def has_plate_model_files(model_dir: Path|str) -> bool:
-    """Return True if the directory appears to contain a usable plate model."""
-    model_dir = Path(model_dir)
-    if not model_dir.is_dir():
-        return False
-    has_rotations = any(model_dir.rglob("*.rot"))
-    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
-    return has_rotations and has_features
+def cache_plate_model(model_name: str, model_dir: str):
+    """Use DataServer to cache a plate reconstruction in provided directory"""
+    data_server = DataServer(model_name, data_dir=model_dir)
+    # Cache reconstruction files
+    _ = data_server.get_plate_reconstruction_files()
+    _ = data_server.get_topology_geometries() 
+    return
 
 def get_plate_reconstruction(
     model_name: Optional[str] = None,
@@ -62,9 +28,7 @@ def get_plate_reconstruction(
 ):
     """Get a `PlateReconstruction` object from a model name and directory.
 
-    If `model_name` is `None`, use local files in `model_dir`. If there is
-    no internet connection, function will assume the plate model is already
-    downloaded.
+    If `model_name` is `None` use local files in `model_dir`.
 
     Parameters
     ----------
@@ -91,9 +55,10 @@ def get_plate_reconstruction(
     Raises
     ------
     ValueError
-        If `model_name` is not recognised by PMM.
+        If `model_name` is not recognised by DataServer.
     """
-    if model_name is None:
+    def _find_model_files():
+        """Search local storage to retrieve custom plate model"""
         globs = ["*.gpml", "*.gpmlz"]
         rotation_files = []
         topology_files = []
@@ -113,34 +78,14 @@ def get_plate_reconstruction(
         rotation_files.extend(
             glob.glob(os.path.join(model_dir, "**", "*.rot"), recursive=True)
         )
-
+        return rotation_files, topology_files, static_polygons
+    
+    # Main function
+    if model_name is None:
+        rotation_files, topology_files, static_polygons = _find_model_files()
     else:
-        try:
-            model = _fetch(model_name, model_dir)
-            rotation_files = model.get_rotation_model()
-            topology_files = model.get_layer("Topologies")
-            static_polygons = model.get_layer("StaticPolygons")
-        except RuntimeError:
-            # If PMM fetch fails but local model files exist, fall back to local files.
-            if not has_plate_model_files(model_dir):
-                raise
-            globs = ["*.gpml", "*.gpmlz"]
-            rotation_files = []
-            topology_files = []
-            static_polygons = []
-            for g in globs:
-                all_filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-                topology_files.extend(glob.glob(os.path.join(model_dir, g)))
-                static_polygons.extend(
-                    [
-                        i for i in all_filenames
-                        if "static" in os.path.basename(i).lower()
-                        and "polygon" in os.path.basename(i).lower()
-                    ]
-                )
-            rotation_files.extend(
-                glob.glob(os.path.join(model_dir, "**", "*.rot"), recursive=True)
-            )
+        server = DataServer(model_name, data_dir=model_dir)
+        rotation_files, topology_files, static_polygons = server.get_plate_reconstruction_files()
 
     if filter_topologies:
         topology_features = filter_topological_features(topology_files)
@@ -158,12 +103,11 @@ def get_plate_reconstruction(
         return plate_reconstruction, tf
     return plate_reconstruction
 
-
 def get_plot_topologies(
     model_name: Optional[str] = None,
     model_dir: str = "plate_model",
     anchor_plate_id: int = 0,
-    time: Optional[int] = None,
+    time: int = 0,
     plate_reconstruction: Optional[PlateReconstruction] = None,
     filter_topologies: bool = False,
 ):
@@ -195,8 +139,32 @@ def get_plot_topologies(
     Raises
     ------
     ValueError
-        If `model_name` is not recognised by PMM.
+        If `model_name` is not recognised by DataServer.
     """
+    def _find_plate_topologies():
+        """Search local storage to retrieve custom plate model topologies"""
+        file_exts = ["*.gpml", "*.gpmlz"]
+        coastlines = []
+        continent_candidates = []
+        for g in file_exts:
+            filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
+            for filename in filenames:
+                basename = os.path.basename(filename)
+                if "coast" in basename.lower():
+                    coastlines.append(filename)
+                if (
+                    "continent" in basename.lower()
+                    or "terrane" in basename.lower()
+                    or (
+                        "static" in basename.lower()
+                        and "polygon" in basename.lower()
+                    )
+                ):
+                    continent_candidates.append(filename)
+        continents = continent_candidates or coastlines
+        return coastlines, continents, None # None for COBs
+    
+    # Main function
     if plate_reconstruction is None:
         plate_reconstruction = get_plate_reconstruction(
             model_name=model_name,
@@ -204,34 +172,18 @@ def get_plot_topologies(
             anchor_plate_id=anchor_plate_id,
             filter_topologies=filter_topologies,
         )
-
-    file_exts = ["*.gpml", "*.gpmlz"]
     if model_name is None:
-        coastlines = []
-        for g in file_exts:
-            filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-            for filename in filenames:
-                basename = os.path.basename(filename)
-                if "coast" in basename.lower():
-                    coastlines.append(filename)
+        coastlines, continents, COBs = _find_plate_topologies()
+    # Collect named reconstruction with DataServer
     else:
-        try:
-            model = _fetch(model_name, model_dir)
-            coastlines = model.get_layer("Coastlines")
-        except RuntimeError:
-            if not has_plate_model_files(model_dir):
-                raise
-            coastlines = []
-            for g in file_exts:
-                filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-                for filename in filenames:
-                    basename = os.path.basename(filename)
-                    if "coast" in basename.lower():
-                        coastlines.append(filename)
+        server = DataServer(model_name, model_dir)
+        coastlines, continents, COBs = server.get_topology_geometries()
 
     return PlotTopologies(
-        plate_reconstruction=plate_reconstruction,
-        coastlines=coastlines,
-        anchor_plate_id=anchor_plate_id,
+        plate_reconstruction=plate_reconstruction, 
+        coastlines=coastlines, 
+        continents=continents, 
+        COBs=COBs,
         time=time,
+        anchor_plate_id=anchor_plate_id
     )
