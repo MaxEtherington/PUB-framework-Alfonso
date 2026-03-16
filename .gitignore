@@ -16,6 +16,7 @@ playground*
 *.lock*
 *.old
 *.run_config.yml
+*.history
 
 
 !data/deposits*
