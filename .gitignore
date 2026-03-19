@@ -9,6 +9,7 @@ output*
 prepared_data*
 scripts*
 playground*
+.github_draft*
 
 *.pdf
 *.log
