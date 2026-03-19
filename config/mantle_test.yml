@@ -12,8 +12,9 @@ all_notebooks:
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
   regions_filename: "regions.geojson" # optional regions file, saved in data/
+
   use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
-  gadopt_run_name:                    # e.g. v1_pre_craton_fix
+  gadopt_run_name: zahirovic2022      # e.g. v1_pre_craton_fix
 
   use_extracted_data: True
   data_dir: data
