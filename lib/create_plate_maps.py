@@ -77,7 +77,7 @@ def run_create_plate_map(
                 )
             os.makedirs(output_dir, exist_ok=True)
 
-    if nprocs == 1:
+    if nprocs <= 1:
         return _run_subset(
             times=times,
             topology_features=topology_features,

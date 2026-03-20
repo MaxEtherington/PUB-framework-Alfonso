@@ -99,6 +99,23 @@ def run_create_study_area_polygons(
             )
         os.makedirs(output_dir, exist_ok=True)
 
+    # Avoid sending heavy reconstruction objects through process pickling.
+    if plate_reconstruction is not None:
+        topological_features = plate_reconstruction.topology_features
+        rotation_model = plate_reconstruction.rotation_model
+        plate_reconstruction = None
+
+    if nprocs <= 1:
+        return _multiple_timesteps(
+            times=times,
+            plate_reconstruction=plate_reconstruction,
+            topological_features=topological_features,
+            rotation_model=rotation_model,
+            output_dir=output_dir,
+            buffer_distance=buffer_distance,
+            return_output=return_output,
+        )
+
     times_split = np.array_split(times, nprocs)
     with Parallel(nprocs, verbose=int(verbose)) as parallel:
         results = parallel(
@@ -139,6 +156,12 @@ def _multiple_timesteps(
             )
         if not isinstance(rotation_model, pygplates.RotationModel):
             rotation_model = pygplates.RotationModel(rotation_model)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            plate_reconstruction = PlateReconstruction(
+                rotation_model=rotation_model,
+                topology_features=topological_features,
+            )
 
     out = []
     for time in times:

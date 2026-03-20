@@ -316,16 +316,29 @@ def _get_overriding_plate_ids(
     gdf["geometry"] = geoms
     gdf = gpd.GeoDataFrame(gdf, geometry="geometry")
 
+    topological_features = plate_reconstruction.topology_features
+    rotation_model = plate_reconstruction.rotation_model
+
     times = data["age (Ma)"].unique()
-    times_split = np.array_split(times, n_jobs)
-    with Parallel(n_jobs, verbose=int(verbose)) as parallel:
-        results = parallel(
-            delayed(_overriding_plate_multiple_timesteps)(
-                gdf=gdf[gdf["age (Ma)"].isin(t)],
-                plate_reconstruction=plate_reconstruction,
+    times_split = np.array_split(times, n_jobs if n_jobs > 0 else 1)
+    if n_jobs <= 1:
+        results = [
+            _overriding_plate_multiple_timesteps(
+                gdf=gdf,
+                topological_features=topological_features,
+                rotation_model=rotation_model,
             )
-            for t in times_split
-        )
+        ]
+    else:
+        with Parallel(n_jobs, verbose=int(verbose)) as parallel:
+            results = parallel(
+                delayed(_overriding_plate_multiple_timesteps)(
+                    gdf=gdf[gdf["age (Ma)"].isin(t)],
+                    topological_features=topological_features,
+                    rotation_model=rotation_model,
+                )
+                for t in times_split
+            )
     out = []
     for i in results:
         out.extend(i)
@@ -338,10 +351,11 @@ def _get_overriding_plate_ids(
     return out
 
 
-def _overriding_plate_multiple_timesteps(gdf, plate_reconstruction):
-    topological_features = plate_reconstruction.topology_features
-    rotation_model = plate_reconstruction.rotation_model
-
+def _overriding_plate_multiple_timesteps(
+    gdf,
+    topological_features,
+    rotation_model,
+):
     times = gdf["age (Ma)"].unique()
     out = []
     for time in times:

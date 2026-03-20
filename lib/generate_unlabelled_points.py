@@ -10,6 +10,7 @@ import pandas as pd
 import pygplates
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
+    from gplately import PlateReconstruction
     from gplately.tools import xyz2lonlat
 from joblib import Parallel, delayed
 from shapely.geometry import Point
@@ -67,19 +68,38 @@ def generate_unlabelled_points(
     rngs = [np.random.default_rng(i) for i in seq.spawn(threads)]
     times_split = np.array_split(times, threads)
 
-    with Parallel(threads, verbose=int(verbose)) as p:
-        results = p(
-            delayed(_multiple_timesteps)(
-                times=t,
+    # Avoid sending heavy reconstruction objects through process pickling.
+    if plate_reconstruction is not None:
+        topological_features = plate_reconstruction.topology_features
+        rotation_model = plate_reconstruction.rotation_model
+        plate_reconstruction = None
+
+    if threads <= 1:
+        results = [
+            _multiple_timesteps(
+                times=times,
                 input_dir=input_dir,
                 plate_reconstruction=plate_reconstruction,
                 topological_features=topological_features,
                 rotation_model=rotation_model,
                 num=num,
-                rng=rng,
+                rng=rngs[0],
             )
-            for t, rng in zip(times_split, rngs)
-        )
+        ]
+    else:
+        with Parallel(threads, verbose=int(verbose)) as p:
+            results = p(
+                delayed(_multiple_timesteps)(
+                    times=t,
+                    input_dir=input_dir,
+                    plate_reconstruction=plate_reconstruction,
+                    topological_features=topological_features,
+                    rotation_model=rotation_model,
+                    num=num,
+                    rng=rng,
+                )
+                for t, rng in zip(times_split, rngs)
+            )
     results_flattened = []
     for i in results:
         results_flattened.extend(i)
@@ -130,6 +150,12 @@ def _multiple_timesteps(
             )
         if not isinstance(rotation_model, pygplates.RotationModel):
             rotation_model = pygplates.RotationModel(rotation_model)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            plate_reconstruction = PlateReconstruction(
+                rotation_model=rotation_model,
+                topology_features=topological_features,
+            )
 
     out = []
     for time in times:
