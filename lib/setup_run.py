@@ -114,11 +114,11 @@ def run_setup(config_path):
         print("Plate model:     provided model ready", file=sys.stderr)
     else:
         from .plate_models import cache_plate_model
-        # Trigger DataServer fetch into the configured model directory.
+        # Trigger PlateModel fetch into the configured model directory.
         cache_plate_model(
             model_name=plate_model_name,
             model_dir=str(plate_model_dir),
         )
-        print(f"Plate model:     DataServer model '{plate_model_name}' ready", file=sys.stderr)
+        print(f"Plate model:     PlateModel '{plate_model_name}' ready", file=sys.stderr)
 
     print("Setup complete.", file=sys.stderr)

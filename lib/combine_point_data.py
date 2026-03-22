@@ -133,10 +133,10 @@ def _prepare_deposit_data(
     n_jobs=1,
     verbose=False,
 ):
-    if isinstance(deposit_data, str):
+    if isinstance(deposit_data, (str, os.PathLike)):
         if verbose:
             print(
-                "Loading deposit data from: " + deposit_data,
+                f"Loading deposit data from: {deposit_data}",
                 file=stderr,
             )
         deposit_data = pd.read_csv(deposit_data)
@@ -279,10 +279,10 @@ def _prepare_unlabelled_data(
     n_jobs=1,
     verbose=False,
 ):
-    if isinstance(unlabelled_data, str):
+    if isinstance(unlabelled_data, (str, os.PathLike)):
         if verbose:
             print(
-                "Loading unlabelled data from file: " + unlabelled_data,
+                f"Loading unlabelled data from file: {unlabelled_data}",
                 file=stderr,
             )
         unlabelled_data = pd.read_csv(unlabelled_data)
