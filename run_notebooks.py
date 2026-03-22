@@ -16,6 +16,7 @@ RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
 # Maps short notebook codes to filenames (pipeline order)
 NOTEBOOK_MAP = {
     "00a": "00a-generate_data",
+    "00bb": "00b-extract_points",
     "00b": "00b-extract_training_data",
     "00c": "00c-extract_grid_data",
     "00d": "00d-extract_mantle_features",
