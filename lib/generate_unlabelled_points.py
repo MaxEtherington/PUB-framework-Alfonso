@@ -69,37 +69,29 @@ def generate_unlabelled_points(
     rngs = [np.random.default_rng(i) for i in seq.spawn(threads)]
     times_split = np.array_split(times, threads)
 
+    if plate_reconstruction is None:
+        plate_reconstruction = PlateReconstruction(
+            topology_features=topological_features,
+            rotation_model=rotation_model,
+        )
     # Avoid sending unpickleable child `PlateModel` objects to worker processes
-    if plate_reconstruction.plate_model is not None:
+    elif plate_reconstruction is not None and plate_reconstruction.plate_model is not None:
         plate_reconstruction = copy.copy(plate_reconstruction)
         plate_reconstruction.plate_model = None
-
-    if threads <= 1:
-        results = [
-            _multiple_timesteps(
-                times=times,
+    
+    with Parallel(threads, verbose=int(verbose)) as p:
+        results = p(
+            delayed(_multiple_timesteps)(
+                times=t,
                 input_dir=input_dir,
                 plate_reconstruction=plate_reconstruction,
                 topological_features=topological_features,
                 rotation_model=rotation_model,
                 num=num,
-                rng=rngs[0],
+                rng=rng,
             )
-        ]
-    else:
-        with Parallel(threads, verbose=int(verbose)) as p:
-            results = p(
-                delayed(_multiple_timesteps)(
-                    times=t,
-                    input_dir=input_dir,
-                    plate_reconstruction=plate_reconstruction,
-                    topological_features=topological_features,
-                    rotation_model=rotation_model,
-                    num=num,
-                    rng=rng,
-                )
-                for t, rng in zip(times_split, rngs)
-            )
+            for t, rng in zip(times_split, rngs)
+        )
     results_flattened = []
     for i in results:
         results_flattened.extend(i)
