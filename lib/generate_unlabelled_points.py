@@ -31,7 +31,7 @@ def generate_unlabelled_points(
     topological_features=None,
     rotation_model=None,
     verbose=False,
-):
+) -> pd.DataFrame:
     """Generate uniformly-distributed points on the unit sphere.
 
     Parameters
