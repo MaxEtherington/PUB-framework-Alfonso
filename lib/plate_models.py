@@ -14,46 +14,90 @@ from gplately import (
 from .check_files import check_plate_model  # re-export  # noqa: F401
 from .misc import filter_topological_features
 
+_LAYER_NAMES = (
+    'Rotations', 'StaticPolygons', 'Coastlines',
+    'ContinentalPolygons', 'Topologies', 'COBs',
+)
+
 def cache_plate_model(model_name: str, model_dir: str) -> None:
-    """Use PlateModelManager to cache plate model files in provided directory"""
-    pmm = PlateModelManager()
-    model = pmm.get_model(model_name=model_name, data_dir=model_dir)
-    layers = [
-        'StaticPolygons', 
-        'Coastlines', 
-        'ContinentalPolygons', 
-        'Topologies', 
-        'COBs'
-    ]
-    for layer in layers:
-        model.get_layer(layer_name=layer, return_none_if_not_exist=True)
+    """Cache plate model files to model_dir via PlateModelManager."""
+    model = PlateModelManager().get_model(model_name=model_name, data_dir=model_dir)
     model.get_rotation_model()
-    return
+    for layer in _LAYER_NAMES:
+        model.get_layer(layer, return_none_if_not_exist=True)
 
-def _fetch_plate_model(model_name, model_dir):
+def _fetch_plate_model(model_name: str, model_dir: str | os.PathLike) -> PlateModel:
+    """Fetch a plate model via PMM, falling back to local files if the fetch fails."""
     try:
-        pmm = PlateModelManager()
-        model = pmm.get_model(model_name=model_name, data_dir=model_dir)
-    except Exception as exc:
-        # If PlateModelManager fetch fails but local model files exist, fall back to local files.
+        return PlateModelManager().get_model(model_name=model_name, data_dir=model_dir)
+    except Exception:
         model = PlateModel(
-                model_name=model_name,
-                data_dir=model_dir,
-                model_cfg=Path(model_dir) / ".metadata.json",
-                readonly=True,
-            )
+            model_name=model_name,
+            data_dir=model_dir,
+            model_cfg=Path(model_dir) / ".metadata.json",
+            readonly=True,
+        )
         if not model.is_model_dir(Path(model_dir) / model_name):
-            raise exc
-    return model
+            raise
+        return model
 
-def has_plate_model_files(model_dir: Path | str) -> bool:
-    """Return True if the directory appears to contain a usable plate model."""
-    model_dir = Path(model_dir)
-    if not model_dir.is_dir():
-        return False
-    has_rotations = any(model_dir.rglob("*.rot"))
-    has_features = any(model_dir.rglob("*.gpml")) or any(model_dir.rglob("*.gpmlz"))
-    return has_rotations and has_features
+def _scan_model_dir(
+    model_dir: str | os.PathLike,
+) -> dict[str, Optional[list[str]]]:
+    """Single-pass filesystem scan returning plate model files by category."""
+    rotations, topologies, static_polygons = [], [], []
+    coastlines, continent_candidates, cobs = [], [], []
+
+    for path in glob.glob(os.path.join(model_dir, "**", "*.rot"), recursive=True):
+        rotations.append(path)
+
+    for ext in ("*.gpml", "*.gpmlz"):
+        for path in glob.glob(os.path.join(model_dir, "**", ext), recursive=True):
+            name = os.path.basename(path).lower()
+            topologies.append(path)
+            is_static_polygon = "static" in name and "polygon" in name
+            if is_static_polygon:
+                static_polygons.append(path)
+            if "coast" in name:
+                coastlines.append(path)
+            if "continent" in name or "terrane" in name or is_static_polygon:
+                continent_candidates.append(path)
+            if "cob" in name:
+                cobs.append(path)
+
+    return {
+        'Rotations':            rotations or None,
+        'StaticPolygons':       static_polygons or None,
+        'Coastlines':           coastlines or None,
+        'ContinentalPolygons':  (continent_candidates or coastlines) or None,
+        'Topologies':           topologies or None,
+        'COBs':                 cobs or None,
+    }
+
+
+def get_model_filenames(
+    plate_reconstruction: Optional[PlateReconstruction] = None,
+    model_dir: Optional[str | os.PathLike] = None,
+) -> dict[str, Optional[list[str]]] | None:
+    """
+    Return a dict mapping layer names to file lists (None if a layer is absent).
+
+    Prefers plate_reconstruction.plate_model if available; falls back to a
+    filesystem scan of model_dir. Returns None if neither source is usable.
+    """
+    if plate_reconstruction is not None:
+        if (plate_model := plate_reconstruction.plate_model) is not None:
+            filenames = {
+                layer: plate_model.get_layer(layer, return_none_if_not_exist=True)
+                for layer in _LAYER_NAMES
+            }
+            filenames['Rotations'] = plate_model.get_rotation_model()
+            return filenames
+
+    if model_dir is not None:
+        return _scan_model_dir(model_dir)
+
+    return None
 
 def get_plate_reconstruction(
     model_name: Optional[str] = None,
@@ -93,37 +137,17 @@ def get_plate_reconstruction(
         Propagates exceptions from PMM fetch when no valid local fallback
         model directory is available.
     """
-    def _find_model_files():
-        """Search local storage to retrieve custom plate model"""
-        globs = ["*.gpml", "*.gpmlz"]
-        rotation_files = []
-        topology_files = []
-        static_polygons = []
-        for g in globs:
-            all_filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-            topology_files.extend(all_filenames)
-            # topology_files.extend(filenames)
-            # rotation_files.extend(filenames)
-            static_polygons.extend(
-                [
-                    i for i in all_filenames
-                    if "static" in os.path.basename(i).lower()
-                    and "polygon" in os.path.basename(i).lower()
-                ]
-            )
-        rotation_files.extend(
-            glob.glob(os.path.join(model_dir, "**", "*.rot"), recursive=True)
-        )
-        return rotation_files, topology_files, static_polygons
     
     model = None
     if model_name is None: # Alfonso2024 provided reconstruction
-        rotation_files, topology_files, static_polygons = _find_model_files()
+        filenames = _scan_model_dir(model_dir)
+        rotation_files  = filenames['Rotations']
+        topology_files  = filenames['Topologies']
+        static_polygons = filenames['StaticPolygons']
     else:
         model = _fetch_plate_model(model_name, model_dir)
-        # Collect files
-        rotation_files = model.get_rotation_model()
-        topology_files = model.get_topologies()
+        rotation_files  = model.get_rotation_model()
+        topology_files  = model.get_topologies()
         static_polygons = model.get_static_polygons()
     
     if filter_topologies:
@@ -184,59 +208,39 @@ def get_plot_topologies(
         Propagates exceptions from plate reconstruction/model retrieval if
         model data cannot be resolved from PMM or local fallback.
     """
-    def _find_plate_topologies():
-        """Search local storage to retrieve custom plate model topologies"""
-        file_exts = ["*.gpml", "*.gpmlz"]
-        coastlines = []
-        continent_candidates = []
-        for g in file_exts:
-            filenames = glob.glob(os.path.join(model_dir, "**", g), recursive=True)
-            for filename in filenames:
-                basename = os.path.basename(filename)
-                if "coast" in basename.lower():
-                    coastlines.append(filename)
-                if (
-                    "continent" in basename.lower()
-                    or "terrane" in basename.lower()
-                    or (
-                        "static" in basename.lower()
-                        and "polygon" in basename.lower()
-                    )
-                ):
-                    continent_candidates.append(filename)
-        continents = continent_candidates or coastlines
-        return coastlines, continents, None # None for COBs
     
-    # Main function
     topology_tf = None
     if plate_reconstruction is None:
-        plate_reconstruction = get_plate_reconstruction(
+        result = get_plate_reconstruction(
             model_name=model_name,
             model_dir=model_dir,
             anchor_plate_id=anchor_plate_id,
             filter_topologies=filter_topologies,
         )
-        if filter_topologies and isinstance(plate_reconstruction, tuple):
-            plate_reconstruction, topology_tf = plate_reconstruction
-    
-    if model_name is None: # Alfonso2024 provided reconstruction
-        coastlines, continents, COBs = _find_plate_topologies()
+        if filter_topologies:
+            plate_reconstruction, topology_tf = result
+        else:
+            plate_reconstruction = result
+
+    if model_name is None:
+        filenames  = _scan_model_dir(model_dir)
+        coastlines = filenames['Coastlines']
+        continents = filenames['ContinentalPolygons']
+        cobs       = filenames['COBs']
     else:
-        model = _fetch_plate_model(model_name, model_dir)
-        # Collect files
+        model      = plate_reconstruction.plate_model or _fetch_plate_model(model_name, model_dir)
         coastlines = model.get_coastlines()
         continents = model.get_continental_polygons()
-        COBs = model.get_COBs(return_none_if_not_exist=True)
+        cobs       = model.get_COBs(return_none_if_not_exist=True)
 
     plot_topologies = PlotTopologies(
-        plate_reconstruction=plate_reconstruction, 
-        coastlines=coastlines, 
-        continents=continents, 
-        COBs=COBs,
+        plate_reconstruction=plate_reconstruction,
+        coastlines=coastlines,
+        continents=continents,
+        COBs=cobs,
         time=time,
-        anchor_plate_id=anchor_plate_id
+        anchor_plate_id=anchor_plate_id,
     )
     if topology_tf is not None:
-        # Keep temporary filtered topology file alive for object lifetime.
         plot_topologies._topology_tf = topology_tf
     return plot_topologies
