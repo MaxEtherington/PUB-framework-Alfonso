@@ -4,6 +4,7 @@ zones.
 import os
 import warnings
 from sys import stderr
+import copy
 from typing import (
     Hashable,
     Iterable,
@@ -99,11 +100,10 @@ def run_create_study_area_polygons(
             )
         os.makedirs(output_dir, exist_ok=True)
 
-    # Avoid sending heavy reconstruction objects through process pickling.
-    if plate_reconstruction is not None:
-        topological_features = plate_reconstruction.topology_features
-        rotation_model = plate_reconstruction.rotation_model
-        plate_reconstruction = None
+    # Avoid sending unpickleable child `PlateModel` objects to worker processes
+    if plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
 
     if nprocs <= 1:
         return _multiple_timesteps(

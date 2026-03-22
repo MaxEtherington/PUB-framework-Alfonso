@@ -3,6 +3,7 @@ import concurrent.futures
 import os
 import warnings
 from sys import stderr
+import copy
 
 import geopandas as gpd
 import numpy as np
@@ -68,11 +69,10 @@ def generate_unlabelled_points(
     rngs = [np.random.default_rng(i) for i in seq.spawn(threads)]
     times_split = np.array_split(times, threads)
 
-    # Avoid sending heavy reconstruction objects through process pickling.
-    if plate_reconstruction is not None:
-        topological_features = plate_reconstruction.topology_features
-        rotation_model = plate_reconstruction.rotation_model
-        plate_reconstruction = None
+    # Avoid sending unpickleable child `PlateModel` objects to worker processes
+    if plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
 
     if threads <= 1:
         results = [
