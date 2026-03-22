@@ -20,5 +20,5 @@ playground*
 *.history
 
 
-!data/deposits*
+!data/deposits/*
 !data/regions.geojson
