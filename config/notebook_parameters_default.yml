@@ -5,7 +5,7 @@ all_notebooks:
   run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: True
-    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name file hierarchy
+    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name the file hierarchy
   timespan:
     min: 0
     max: 400

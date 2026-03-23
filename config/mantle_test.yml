@@ -12,25 +12,26 @@ all_notebooks:
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
   regions_filename: "regions.geojson" # optional regions file, saved in data/
+  deposits_filename: "deposits-Etherington.csv"
 
-  use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
-  gadopt_run_name: zahirovic2022      # e.g. v1_pre_craton_fix
+  use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
+  gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
   use_extracted_data: True
   data_dir: data
   output_dir: output
 
-  n_jobs: 24
+  n_jobs: 8
   verbose: True
   random_seed: 1234
   overwrite_output: False
 
 
 notebook_00a:
-  overwrite_output: False
+  overwrite_output: false
   n_jobs:
   timespan:
-  cleanup: False
+  cleanup: false
 
 notebook_00b:
   n_jobs:
@@ -39,8 +40,6 @@ notebook_00b:
   random_seed:
   overwrite_output:
   extracted_data_dir:
-  regions_filename:
-  deposits_filename: "deposits-Etherington.csv"
   num_unlabelled: 200
 
 notebook_00bb:
@@ -50,8 +49,6 @@ notebook_00bb:
   random_seed:
   overwrite_output:
   extracted_data_dir:
-  regions_filename:
-  deposits_filename: "deposits-Etherington.csv"
   num_unlabelled: 200
   grid_resolution: 0.5
 
@@ -59,15 +56,13 @@ notebook_00c:
   n_jobs:
   verbose:
   timespan:
-  regions_filename:
-  overwrite_output: False
+  overwrite_output: false
   grid_resolution: 0.5
 
 notebook_00d:
   n_jobs:
   verbose:
   timespan:
-  regions_filename:
   overwrite_output:
 
 notebook_01:
@@ -77,10 +72,10 @@ notebook_01:
   random_seed:
   use_extracted_data:
   overwrite_output:
-  use_same_features: True
-  automatic_feature_selection: False
-  create_svm: True
-  create_regional_models: True
+  use_same_features: true
+  automatic_feature_selection: false
+  create_svm: true
+  create_regional_models: true
 
 notebook_02:
   output_dir:
