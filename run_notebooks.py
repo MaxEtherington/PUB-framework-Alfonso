@@ -19,7 +19,7 @@ NOTEBOOK_MAP = {
     "00bb": "00bb-extract_points",
     "00b": "00b-extract_training_data",
     "00c": "00c-extract_grid_data",
-    "00d": "00d-extract_mantle_features",
+    "00d": "00d-extract_mantle_data",
     "01":  "01-create_classifiers",
     "02":  "02-create_probability_maps",
     "03":  "03-create_probability_animations",

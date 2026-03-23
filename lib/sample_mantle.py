@@ -12,8 +12,18 @@ from .misc import _PathLike
 # Non-dimensionalisation offset used by G-ADOPT: surface radius in Earth radii.
 _GADOPT_SURFACE_R = 2.208
 
-DEFAULT_DEPTHS: tuple[int, ...] = (100, 200, 300, 400, 500, 600)  # km
-MANTLE_FIELDS: tuple[str, ...] = ('Temperature_Deviation_CG',)
+DEFAULT_DEPTHS: tuple[int, ...] = (np.arange(100, 2900, 100))  # km
+MANTLE_FIELDS: tuple[str, ...] = (
+    "FullTemperature_CG",
+    "Pressure",
+    "Radial_Velocity",
+    "Temperature_CG",
+    "Temperature_Deviation_CG",
+    "Velocity_x",
+    "Velocity_y",
+    "Velocity_z",
+    "Viscosity_CG",
+)
 
 
 def _to_km(depths: ArrayLike) -> np.ndarray:
@@ -76,6 +86,7 @@ def extract_basic_mantle_features(
     mantle_dir: _PathLike,
     points: pd.DataFrame,
     depths_km: ArrayLike = DEFAULT_DEPTHS,
+    mantle_fields: ArrayLike = MANTLE_FIELDS,
 ) -> pd.DataFrame:
     """Extract basic mantle features at a series of labelled points.
 
@@ -86,7 +97,7 @@ def extract_basic_mantle_features(
     points : DataFrame
         Must contain columns 'lon', 'lat', and 'age (Ma)'.
     depths_km : array-like, optional
-        Depths in km below surface. Default: (100, 200, 300, 400, 500, 600) km.
+        Depths in km below surface. Default is `DEFAULT_DEPTHS` (100, 200, ..., 2800 km).
 
     Returns
     -------
@@ -97,13 +108,14 @@ def extract_basic_mantle_features(
     depths_km = list(depths_km)
     depths_nondim = _to_nondim(depths_km)
     out = points.copy()
+    new_cols = {}
 
     with xr.open_mfdataset(
         sorted(mantle_dir.glob("*.nc")),
         combine='nested',
         concat_dim='time',
     ) as ds:
-        for var in MANTLE_FIELDS:
+        for var in mantle_fields:
             sampled = _sample_mantle(
                 ds=ds,
                 var=var,
@@ -113,6 +125,10 @@ def extract_basic_mantle_features(
                 depths=depths_nondim,
             )
             for i, depth_km in enumerate(depths_km):
-                out[f"{var}_{int(depth_km)}km"] = sampled[:, i]
+                new_cols[f"{var}_{int(depth_km)}km"] = sampled[:, i]
+
+    # Join all new columns at once to avoid DataFrame fragmentation
+    if new_cols:
+        out = pd.concat([out, pd.DataFrame(new_cols, index=out.index)], axis=1)
 
     return out
