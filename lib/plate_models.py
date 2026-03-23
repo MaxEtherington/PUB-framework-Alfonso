@@ -12,21 +12,25 @@ from gplately import (
 )
 
 from .check_files import check_plate_model  # re-export  # noqa: F401
-from .misc import filter_topological_features
+from .misc import (
+    filter_topological_features,
+    _PathLike,
+)
+    
 
 _LAYER_NAMES = (
     'Rotations', 'StaticPolygons', 'Coastlines',
     'ContinentalPolygons', 'Topologies', 'COBs',
 )
 
-def cache_plate_model(model_name: str, model_dir: str) -> None:
+def cache_plate_model(model_name: str, model_dir: _PathLike) -> None:
     """Cache plate model files to model_dir via PlateModelManager."""
     model = PlateModelManager().get_model(model_name=model_name, data_dir=model_dir)
     model.get_rotation_model()
     for layer in _LAYER_NAMES:
         model.get_layer(layer, return_none_if_not_exist=True)
 
-def _fetch_plate_model(model_name: str, model_dir: str | os.PathLike) -> PlateModel:
+def _fetch_plate_model(model_name: str, model_dir: _PathLike) -> PlateModel:
     """Fetch a plate model via PMM, falling back to local files if the fetch fails."""
     try:
         return PlateModelManager().get_model(model_name=model_name, data_dir=model_dir)
@@ -42,7 +46,7 @@ def _fetch_plate_model(model_name: str, model_dir: str | os.PathLike) -> PlateMo
         return model
 
 def _scan_model_dir(
-    model_dir: str | os.PathLike,
+    model_dir: _PathLike,
 ) -> dict[str, Optional[list[str]]]:
     """Single-pass filesystem scan returning plate model files by category."""
     rotations, topologies, static_polygons = [], [], []
@@ -101,7 +105,7 @@ def get_model_filenames(
 
 def get_plate_reconstruction(
     model_name: Optional[str] = None,
-    model_dir: str = "plate_model",
+    model_dir: _PathLike = "plate_model",
     anchor_plate_id: int = 0,
     filter_topologies: bool = False,
 ) -> PlateReconstruction | tuple[PlateReconstruction, _TemporaryFileWrapper]:
@@ -113,7 +117,7 @@ def get_plate_reconstruction(
     ----------
     model_name : str, optional
         Name of the model to fetch from PMM.
-    model_dir : str, default: 'plate_model'
+    model_dir : _PathLike, default: 'plate_model'
         Directory to store files.
     anchor_plate_id : int, default: 0
         Anchor plate ID of the plate model.
@@ -171,7 +175,7 @@ def get_plate_reconstruction(
 
 def get_plot_topologies(
     model_name: Optional[str] = None,
-    model_dir: str = "plate_model",
+    model_dir: _PathLike = "plate_model",
     anchor_plate_id: int = 0,
     time: int = 0,
     plate_reconstruction: Optional[PlateReconstruction] = None,
@@ -185,7 +189,7 @@ def get_plot_topologies(
     ----------
     model_name : str, optional
         Name of the model to fetch from PMM.
-    model_dir : str, default: 'plate_model'
+    model_dir : _PathLike, default: 'plate_model'
         Directory to store files.
     anchor_plate_id : int, default: 0
         Anchor plate ID of the plate model.
