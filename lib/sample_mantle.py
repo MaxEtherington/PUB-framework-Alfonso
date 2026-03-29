@@ -106,7 +106,7 @@ def _sample_mantle(
         method=method,
     ).values
 
-    if result.isna().any():
+    if np.isnan(np.sum(result)):
         raise ValueError("NaN values found in sampled mantle data. Check that all points are within the dataset bounds.")
     
     return result
