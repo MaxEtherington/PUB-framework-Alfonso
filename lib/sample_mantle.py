@@ -77,9 +77,7 @@ def _sample_mantle(
         method=method,
     ).values
 
-    if np.ndim(depths) > 0:
-        return result.T  # (n_depths, n_points) → (n_points, n_depths)
-    return result.flatten()
+    return result
 
 
 def extract_basic_mantle_features(
@@ -132,3 +130,24 @@ def extract_basic_mantle_features(
         out = pd.concat([out, pd.DataFrame(new_cols, index=out.index)], axis=1)
 
     return out
+
+def calculate_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
+    """Calculate velocity magnitude from velocity components."""
+    vx = ds['Velocity_x']
+    vy = ds['Velocity_y']
+    vz = ds['Velocity_z']
+    return np.sqrt(vx**2 + vy**2 + vz**2)
+
+def calculate_tangential_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
+    """Calculate tangential velocity magnitude from velocity components."""
+    vx = ds['Velocity_x']
+    vy = ds['Velocity_y']
+    vz = ds['Velocity_z']
+    vr = ds['Radial_Velocity']
+    return np.sqrt(vx**2 + vy**2 + vz**2 - vr**2) # u_tangential = sqrt(u^2 - u_radial^2)
+
+def calculate_radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
+    """Calculate radial-to-tangential velocity ratio."""
+    vr = ds['Radial_Velocity']
+    vt = calculate_tangential_velocity_magnitude(ds)
+    return np.abs(vr) / vt
