@@ -4,12 +4,12 @@
 .gitattributes
 __pycache__
 
-data*
-output*
-prepared_data*
-scripts*
-playground*
-.github_draft*
+/data/
+/output/
+/prepared_data/
+/scripts/
+/playground/
+/.github_draft/
 
 *.pdf
 *.log
@@ -19,6 +19,6 @@ playground*
 *.run_config.yml
 *.history
 
-
-!data/deposits/*
-!data/regions.geojson
+!/data/deposits/
+!/data/deposits/*
+!/data/regions.geojson

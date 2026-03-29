@@ -1,12 +1,12 @@
 """Functions to sample mantle data from G-ADOPT
 output grids and join to point data.
 """
-from numpy.typing import ArrayLike
 import numpy as np
 import pandas as pd
 import xarray as xr
 import gplately as gplt
 
+from numpy.typing import ArrayLike
 from .misc import _PathLike
 
 # Non-dimensionalisation offset used by G-ADOPT: surface radius in Earth radii.
