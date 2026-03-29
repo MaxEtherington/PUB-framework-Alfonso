@@ -36,6 +36,30 @@ def _to_nondim(depths_km: ArrayLike) -> np.ndarray:
     return _GADOPT_SURFACE_R - (np.asarray(depths_km, dtype=float) / gplt.EARTH_RADIUS)
 
 
+def _match_longitude_convention(ds: xr.Dataset, lons: ArrayLike) -> np.ndarray:
+    """Map longitudes to match the dataset longitude convention."""
+    lons_arr = np.asarray(lons, dtype=float)
+
+    # Use finite values only to detect whether the dataset uses 0..360 or -180..180.
+    ds_lons = np.asarray(ds["lon"].values, dtype=float)
+    ds_lons = ds_lons[np.isfinite(ds_lons)]
+    if ds_lons.size == 0:
+        return lons_arr
+
+    ds_min = float(np.min(ds_lons))
+    ds_max = float(np.max(ds_lons))
+
+    # Common G-ADOPT convention: [0, 360].
+    if ds_min >= 0.0 and ds_max > 180.0:
+        return np.mod(lons_arr, 360.0)
+
+    # Common geospatial convention: [-180, 180].
+    if ds_min < 0.0 and ds_max <= 180.0:
+        return ((lons_arr + 180.0) % 360.0) - 180.0
+
+    return lons_arr
+
+
 def _sample_mantle(
     ds: xr.Dataset,
     var: str,
@@ -69,14 +93,19 @@ def _sample_mantle(
     -------
     np.ndarray, shape (n_points,) or (n_points, n_depths)
     """
+    lons = _match_longitude_convention(ds=ds, lons=lons)
+
     result = ds[var].interp(
-        time =xr.DataArray(np.asarray(times,  dtype=float), dims='points'),
-        lon  =xr.DataArray(np.asarray(lons,   dtype=float), dims='points'),
+        lon  =xr.DataArray(lons, dims='points'),
         lat  =xr.DataArray(np.asarray(lats,   dtype=float), dims='points'),
+        time =xr.DataArray(np.asarray(times,  dtype=float), dims='points'),
         depth=np.asarray(depths, dtype=float),
         method=method,
     ).values
 
+    if result.isna().any():
+        raise ValueError("NaN values found in sampled mantle data. Check that all points are within the dataset bounds.")
+    
     return result
 
 
