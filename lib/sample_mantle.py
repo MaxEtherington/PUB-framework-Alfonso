@@ -56,6 +56,9 @@ def _match_longitude_convention(ds: xr.Dataset, lons: ArrayLike) -> np.ndarray:
     # Common geospatial convention: [-180, 180].
     if ds_min < 0.0 and ds_max <= 180.0:
         return ((lons_arr + 180.0) % 360.0) - 180.0
+    
+    if ds_min < 0.0 and ds_max > 180.0:
+        raise ValueError(f"Cannot determine dataset longitude convention from range [{ds_min:.2f}, {ds_max:.2f}].")
 
     return lons_arr
 
