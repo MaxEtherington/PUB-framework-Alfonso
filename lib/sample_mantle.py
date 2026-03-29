@@ -12,7 +12,7 @@ from .misc import _PathLike
 # Non-dimensionalisation offset used by G-ADOPT: surface radius in Earth radii.
 _GADOPT_SURFACE_R = 2.208
 
-DEFAULT_DEPTHS: tuple[int, ...] = (np.arange(100, 2900, 100))  # km
+DEFAULT_DEPTHS: np.ndarray = np.arange(100, 2900, 100)  # km
 MANTLE_FIELDS: tuple[str, ...] = (
     "FullTemperature_CG",
     "Pressure",
@@ -36,31 +36,78 @@ def _to_nondim(depths_km: ArrayLike) -> np.ndarray:
     return _GADOPT_SURFACE_R - (np.asarray(depths_km, dtype=float) / gplt.EARTH_RADIUS)
 
 
+def _detect_lon_convention(lon_values: ArrayLike) -> str | None:
+    """Detect longitude convention: '0-360', '-180-180', or None if unknown."""
+    vals = np.asarray(lon_values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return None
+
+    lon_min = float(np.min(vals))
+    lon_max = float(np.max(vals))
+
+    if lon_min >= 0.0 and lon_max > 180.0:
+        return "0-360"
+    if lon_min < 0.0 and lon_max <= 180.0:
+        return "-180-180"
+    if lon_min < 0.0 and lon_max > 180.0:
+        raise ValueError(
+            f"Cannot determine dataset longitude convention from range [{lon_min:.2f}, {lon_max:.2f}]."
+        )
+    return None
+
+
+def _normalize_lons(lons: ArrayLike, convention: str | None) -> np.ndarray:
+    """Normalize longitudes to a target convention."""
+    lons_arr = np.asarray(lons, dtype=float)
+    if convention == "0-360":
+        return np.mod(lons_arr, 360.0)
+    if convention == "-180-180":
+        return ((lons_arr + 180.0) % 360.0) - 180.0
+    return lons_arr
+
+
 def _match_longitude_convention(ds: xr.Dataset, lons: ArrayLike) -> np.ndarray:
     """Map longitudes to match the dataset longitude convention."""
+    convention = _detect_lon_convention(ds["lon"].values)
+    return _normalize_lons(lons, convention)
+
+
+def _interp_cyclic_lon(
+    da: xr.DataArray,
+    lons: ArrayLike,
+    lats: ArrayLike,
+    times: ArrayLike,
+    depths: ArrayLike,
+    method: str = "linear",
+) -> np.ndarray:
+    """Interpolate with periodic longitude so seam points use 359<->0 neighbours.
+
+    Assumes `lons` are already normalized to the dataset longitude convention.
+    """
     lons_arr = np.asarray(lons, dtype=float)
+    lats_arr = np.asarray(lats, dtype=float)
+    times_arr = np.asarray(times, dtype=float)
+    depths_arr = np.asarray(depths, dtype=float)
 
-    # Use finite values only to detect whether the dataset uses 0..360 or -180..180.
-    ds_lons = np.asarray(ds["lon"].values, dtype=float)
-    ds_lons = ds_lons[np.isfinite(ds_lons)]
-    if ds_lons.size == 0:
-        return lons_arr
+    lon_vals = np.asarray(da["lon"].values, dtype=float)
+    lon_vals = lon_vals[np.isfinite(lon_vals)]
+    if lon_vals.size == 0:
+        raise ValueError("Longitude coordinate is empty.")
 
-    ds_min = float(np.min(ds_lons))
-    ds_max = float(np.max(ds_lons))
+    # Add wrapped slices on both sides of the longitude axis to interpolate
+    # across the seam (e.g. between 359 and 0 degrees).
+    left = da.isel(lon=-1).assign_coords(lon=da["lon"].isel(lon=-1) - 360.0)
+    right = da.isel(lon=0).assign_coords(lon=da["lon"].isel(lon=0) + 360.0)
+    da_cyclic = xr.concat([left, da, right], dim="lon").sortby("lon")
 
-    # Common G-ADOPT convention: [0, 360].
-    if ds_min >= 0.0 and ds_max > 180.0:
-        return np.mod(lons_arr, 360.0)
-
-    # Common geospatial convention: [-180, 180].
-    if ds_min < 0.0 and ds_max <= 180.0:
-        return ((lons_arr + 180.0) % 360.0) - 180.0
-    
-    if ds_min < 0.0 and ds_max > 180.0:
-        raise ValueError(f"Cannot determine dataset longitude convention from range [{ds_min:.2f}, {ds_max:.2f}].")
-
-    return lons_arr
+    return da_cyclic.interp(
+        lon=xr.DataArray(lons_arr, dims="points"),
+        lat=xr.DataArray(lats_arr, dims="points"),
+        time=xr.DataArray(times_arr, dims="points"),
+        depth=depths_arr,
+        method=method,
+    ).values
 
 
 def _sample_mantle(
@@ -70,7 +117,7 @@ def _sample_mantle(
     lats: ArrayLike,
     times: ArrayLike,
     depths: ArrayLike,
-    method: str = 'linear',
+    method: str = "linear",
 ) -> np.ndarray:
     """Sample a mantle variable at a series of (lon, lat, time) points.
 
@@ -98,15 +145,16 @@ def _sample_mantle(
     """
     lons = _match_longitude_convention(ds=ds, lons=lons)
 
-    result = ds[var].interp(
-        lon  =xr.DataArray(lons, dims='points'),
-        lat  =xr.DataArray(np.asarray(lats,   dtype=float), dims='points'),
-        time =xr.DataArray(np.asarray(times,  dtype=float), dims='points'),
-        depth=np.asarray(depths, dtype=float),
+    result = _interp_cyclic_lon(
+        da=ds[var],
+        lons=lons,
+        lats=lats,
+        times=times,
+        depths=depths,
         method=method,
-    ).values
+    )
 
-    if np.isnan(np.sum(result)):
+    if np.isnan(result).any():
         raise ValueError("NaN values found in sampled mantle data. Check that all points are within the dataset bounds.")
     
     return result
@@ -149,37 +197,41 @@ def extract_basic_mantle_features(
             sampled = _sample_mantle(
                 ds=ds,
                 var=var,
-                lons=points['lon'],
-                lats=points['lat'],
-                times=points['age (Ma)'],
+                lons=points["lon"],
+                lats=points["lat"],
+                times=points["age (Ma)"],
                 depths=depths_nondim,
             )
             for i, depth_km in enumerate(depths_km):
                 new_cols[f"{var}_{int(depth_km)}km"] = sampled[:, i]
 
-    # Join all new columns at once to avoid DataFrame fragmentation
+    # Join all new columns at once to avoid DataFrame fragmentation.
     if new_cols:
         out = pd.concat([out, pd.DataFrame(new_cols, index=out.index)], axis=1)
 
     return out
 
+
 def calculate_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
     """Calculate velocity magnitude from velocity components."""
-    vx = ds['Velocity_x']
-    vy = ds['Velocity_y']
-    vz = ds['Velocity_z']
+    vx = ds["Velocity_x"]
+    vy = ds["Velocity_y"]
+    vz = ds["Velocity_z"]
     return np.sqrt(vx**2 + vy**2 + vz**2)
+
 
 def calculate_tangential_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
     """Calculate tangential velocity magnitude from velocity components."""
-    vx = ds['Velocity_x']
-    vy = ds['Velocity_y']
-    vz = ds['Velocity_z']
-    vr = ds['Radial_Velocity']
-    return np.sqrt(vx**2 + vy**2 + vz**2 - vr**2) # u_tangential = sqrt(u^2 - u_radial^2)
+    vx = ds["Velocity_x"]
+    vy = ds["Velocity_y"]
+    vz = ds["Velocity_z"]
+    vr = ds["Radial_Velocity"]
+    # Clip tiny negative values from floating-point error before sqrt.
+    return np.sqrt(np.maximum(vx**2 + vy**2 + vz**2 - vr**2, 0.0))
+
 
 def calculate_radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
     """Calculate radial-to-tangential velocity ratio."""
-    vr = ds['Radial_Velocity']
+    vr = ds["Radial_Velocity"]
     vt = calculate_tangential_velocity_magnitude(ds)
     return np.abs(vr) / vt
