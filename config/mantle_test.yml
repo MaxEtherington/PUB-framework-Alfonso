@@ -14,7 +14,7 @@ all_notebooks:
   regions_filename: "regions.geojson" # optional regions file, saved in data/
   deposits_filename: "deposits-Etherington.csv"
 
-  use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
+  use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
   gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
   use_extracted_data: True
@@ -73,7 +73,7 @@ notebook_01:
   use_extracted_data:
   overwrite_output:
   use_same_features: true
-  automatic_feature_selection: false
+  automatic_feature_selection: true
   create_svm: true
   create_regional_models: true
 
