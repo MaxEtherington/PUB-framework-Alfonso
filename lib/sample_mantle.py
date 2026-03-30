@@ -212,7 +212,7 @@ def extract_basic_mantle_features(
     return out
 
 
-def calculate_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
+def _calculate_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
     """Calculate velocity magnitude from velocity components."""
     vx = ds["Velocity_x"]
     vy = ds["Velocity_y"]
@@ -220,7 +220,7 @@ def calculate_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
     return np.sqrt(vx**2 + vy**2 + vz**2)
 
 
-def calculate_tangential_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
+def _calculate_tangential_velocity(ds: xr.Dataset) -> xr.DataArray:
     """Calculate tangential velocity magnitude from velocity components."""
     vx = ds["Velocity_x"]
     vy = ds["Velocity_y"]
@@ -230,8 +230,16 @@ def calculate_tangential_velocity_magnitude(ds: xr.Dataset) -> xr.DataArray:
     return np.sqrt(np.maximum(vx**2 + vy**2 + vz**2 - vr**2, 0.0))
 
 
-def calculate_radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
+def _calculate_radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
     """Calculate radial-to-tangential velocity ratio."""
     vr = ds["Radial_Velocity"]
-    vt = calculate_tangential_velocity_magnitude(ds)
+    vt = _calculate_tangential_velocity(ds)
     return np.abs(vr) / vt
+
+def calculate_derived_mantle_velocity_features(ds: xr.Dataset) -> xr.Dataset:
+    """Calculate derived mantle features and add to dataset."""
+    ds = ds.copy()
+    ds["Velocity_Magnitude"] = _calculate_velocity_magnitude(ds)
+    ds["Tangential_Velocity"] = _calculate_tangential_velocity(ds)
+    ds["Radial_Tangential_Ratio"] = _calculate_radial_tangential_ratio(ds)
+    return ds
