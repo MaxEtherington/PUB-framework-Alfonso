@@ -9,15 +9,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
 
 
-def _resolve_config_paths(config):
-    """Resolve relative data_dir and output_dir to absolute paths (repo-root-relative)."""
-    all_nb = config.get("all_notebooks", {})
-    for key in ("data_dir", "output_dir"):
-        val = all_nb.get(key)
-        if val and not Path(str(val).strip()).is_absolute():
-            all_nb[key] = str(REPO_ROOT / str(val).strip())
-
-
 def _required_str(mapping, key, context):
     value = mapping.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -39,8 +30,6 @@ def _prepare_config(config_path):
 
     if not isinstance(config, dict):
         raise ValueError(f"Invalid config file: {config_path}")
-
-    _resolve_config_paths(config)
 
     with open(RUN_CONFIG_PATH, "w") as f:
         yaml.dump(config, f)
