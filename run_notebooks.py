@@ -5,106 +5,120 @@ import sys
 from pathlib import Path
 
 import papermill as pm
-from ruamel.yaml import YAML
+
+# Local imports
+from .paths import PathConfigManager
+
+p: PathConfigManager = None
 
 # Disable ipykernel warnings
 os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
 
-REPO_ROOT = Path(__file__).parent.resolve()
-RUN_CONFIG_PATH = REPO_ROOT / "config" / ".run_config.yml"
 
-# Maps short notebook codes to filenames (pipeline order)
-NOTEBOOK_MAP = {
-    "00a": "00a-generate_data",
-    "00bb": "00bb-extract_points",
-    "00b": "00b-extract_training_data",
-    "00c": "00c-extract_grid_data",
-    "00d": "00d-extract_mantle_data",
-    "01":  "01-create_classifiers",
-    "02":  "02-create_probability_maps",
-    "03":  "03-create_probability_animations",
-    "04":  "04-create_erosion_distribution",
-    "05":  "05-create_preservation_maps",
-    "06":  "06-create_preservation_animations",
-    "07":  "07-partial_dependence",
-    "08":  "08-time_series",
-}
+def _get_notebook_path(name) -> Path:
+    """Find the path to a notebook given a portion or all of its name."""
+    candidates = list(PathConfigManager.ROOT.glob(f"*{name}*.ipynb"))
+    if not candidates:
+        raise FileNotFoundError(f"No notebook found containing '{name}'")
+    if len(candidates) > 1:
+        raise ValueError(f"Multiple notebooks found for '{name}': {candidates}")
+    return candidates[0]
 
 
-def _resolve_config_paths(config):
-    """Resolve relative data_dir and output_dir to absolute paths (repo-root-relative)."""
-    all_nb = config.get("all_notebooks", {})
-    for key in ("data_dir", "output_dir"):
-        val = all_nb.get(key)
-        if val and not Path(str(val).strip()).is_absolute():
-            all_nb[key] = str(REPO_ROOT / str(val).strip())
+def _get_notebook_filepaths(names) -> list[Path]:
+    """Find and validate paths to notebooks given portions or all of their names."""
+    missing = []
+    ambiguous = []
+    paths = []
+    for name in names:
+        try:
+            paths.append(_get_notebook_path(name))
+        except FileNotFoundError as e:
+            missing.append(str(e))
+        except ValueError as e:
+            ambiguous.append(str(e))
+    if missing:
+        raise FileNotFoundError("One or more notebooks not found:\n" + "\n  ".join(missing))
+    if ambiguous:
+        raise ValueError("One or more notebook names are ambiguous:\n" + "\n  ".join(ambiguous))
+    return paths
 
 
-def prepare_run(config_path):
+def _copy_config_to(output_path):
+    """Copy the active config file to an output directory"""
+    if not p.CONFIG_PATH.is_file():
+        raise FileNotFoundError(f"Could not copy config: Config file not found: {p.CONFIG_PATH}")
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(p.CONFIG_PATH.read_text())
+
+
+def _find_config_path(config_path) -> Path:
+    """Resolve shorthand config path to canonical path."""
+    path = Path(config_path).resolve()
+    if not path.is_file():
+        path = PathConfigManager.CONFIG_DIR / config_path
+        if not path.is_file():
+            raise FileNotFoundError(f"Config file not found: {config_path} (tried {path})")
+    return path
+
+
+def _prepare_run(config_path):
     """Copy config to config/.run_config.yml and write config_snapshot.yml."""
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    yaml.width = 4096  # prevent line-wrapping of long paths
-
-    config_path = Path(config_path).resolve()
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(config_path) as f:
-        config = yaml.load(f)
-
-    _resolve_config_paths(config)
+    config_path = _find_config_path(config_path)
+    
+    global p
+    p = PathConfigManager(config_path)
 
     # Write run config (used by all notebooks)
-    with open(RUN_CONFIG_PATH, "w") as f:
-        yaml.dump(config, f)
+    _copy_config_to(p.RUN_CONFIG_PATH)
 
     # Write config snapshot to outputs/{run_name}/ for reproducibility
-    run_name = config.get("all_notebooks", {}).get("run_name", "baseline")
-    output_dir_base = config.get("all_notebooks", {}).get("output_dir", str(REPO_ROOT / "output"))
-    snapshot_dir = Path(output_dir_base) / run_name
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    with open(snapshot_dir / "config_snapshot.yml", "w") as f:
-        yaml.dump(config, f)
+    _copy_config_to(p.OUTPUT_DIR / "config_snapshot.yml")
+    
+    # Update paths and create directories based on chosen config
+    p.create_directories()
+    
+    # Validate expected input paths exist (e.g. deposits, mantle features)
+    p.validate_input_paths()
 
-    print(f"Config:          {config_path}", file=sys.stderr)
-    print(f"Run config:      {RUN_CONFIG_PATH}", file=sys.stderr)
-    print(f"Config snapshot: {snapshot_dir / 'config_snapshot.yml'}", file=sys.stderr)
+    print(f"Config:          {p.CONFIG_PATH}", file=sys.stderr)
+    print(f"Run config:      {p.RUN_CONFIG_PATH}", file=sys.stderr)
+    print(f"Config snapshot: {p.OUTPUT_DIR / 'config_snapshot.yml'}", file=sys.stderr)
 
 
-def run_notebook(input_filename, output_filename=None, parameters=None):
-    if not input_filename.endswith(".ipynb"):
-        input_filename += ".ipynb"
-    if not os.path.isfile(input_filename):
-        raise FileNotFoundError(f"Input file not found: {input_filename}")
-    if output_filename is None:
-        output_filename = input_filename[:-6] + "_output.ipynb"
-    print(f"Running notebook: {input_filename}", file=sys.stderr)
-    print(f"Output file:      {output_filename}", file=sys.stderr)
+def run_notebook(
+    input_nb_filepath: Path, 
+    output_nb_filepath: Path = None, 
+    parameters=None
+):
+    """Run a notebook via papermill, with optional parameters and output path.
+       If output_nb_filepath is not provided, defaults to input_nb_filepath with '_output' suffix"""
+
+    input_nb_filepath = Path(input_nb_filepath)
+    
+    if not input_nb_filepath.is_file():
+        raise FileNotFoundError(f"Input notebook not found: {input_nb_filepath}")
+    if output_nb_filepath is None:
+        output_nb_filepath = input_nb_filepath.with_name(input_nb_filepath.stem + "_output.ipynb")
+    
+    print(f"Running notebook: {input_nb_filepath}", file=sys.stderr)
+    print(f"Output file:      {output_nb_filepath}", file=sys.stderr)
+    
     pm.execute_notebook(
-        input_filename,
-        output_filename,
+        input_nb_filepath,
+        output_nb_filepath,
         parameters,
         kernel_name="python3",
-        cwd=os.path.dirname(os.path.abspath(input_filename)),
+        cwd=input_nb_filepath.resolve().parent,
     )
 
 
-def _resolve_notebook_names(names):
-    """Map short codes (e.g. '00b') to full filenames; pass through full names unchanged."""
-    return [NOTEBOOK_MAP.get(name, name) for name in names]
-
-
 def _main(args):
-    if args.setup:
-        from lib.setup_run import run_setup
-        run_setup(args.config)
-        return 0
-
     if args.list_defaults:
         print(
             "Available notebooks:",
-            *[f"  {code}: {name}.ipynb" for code, name in NOTEBOOK_MAP.items()],
+            *[f"  {filepath.name}" for filepath in sorted(PathConfigManager.ROOT.glob("*.ipynb"))],
             sep="\n",
             flush=True,
         )
@@ -121,19 +135,22 @@ def _main(args):
             "Must specify at least one notebook via --notebooks (e.g. --notebooks 00b 00c 01)."
         )
 
-    prepare_run(args.config)
+    # Prepare paths and directories based on config,
+    # validate inputs, create config snapshot, etc.
+    _prepare_run(args.config)
 
-    filenames = _resolve_notebook_names(args.notebooks)
+    # Collect and validate notebook paths
+    notebook_filepaths = _get_notebook_filepaths(args.notebooks)
 
-    # Validate all notebooks exist before starting any
-    for filename in filenames:
-        full = filename if filename.endswith(".ipynb") else filename + ".ipynb"
-        if not os.path.isfile(full):
-            raise FileNotFoundError(f"Notebook not found: {full}")
+    if args.setup:
+        from lib.setup_run import run_setup
+        run_setup(p)
+        return 0
 
-    for filename in filenames:
-        output_filename = filename if args.overwrite else None
-        run_notebook(filename, output_filename, parameters=None)
+
+    for notebook_filepath in notebook_filepaths:
+        output_filepath = notebook_filepath if args.overwrite else None
+        run_notebook(notebook_filepath, output_filepath, parameters=None)
 
     return 0
 
@@ -174,8 +191,8 @@ if __name__ == "__main__":
         dest="list_defaults",
     )
     parser.add_argument(
-        "--setup",
-        help="prepare run directories and plate model, then exit",
+        "--cache-remote",
+        help="cache remotely-hosted data (e.g. plate models), then exit; use when notebooks are run on a machine without internet access (e.g. HPC)",
         action="store_true",
         dest="setup",
     )
