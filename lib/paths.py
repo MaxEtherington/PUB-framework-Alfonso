@@ -1,29 +1,74 @@
 from pathlib import Path
 from load_params import get_params
 
-# =============== Load config =============== 
+class PathConfigManager():
+    """Lightweight class to hold and manage project paths/config based on provided config."""
+    
+    # Invariant paths
+    ROOT            = Path(__file__).resolve().parent.parent
+    CONFIG_DIR      = ROOT / 'config'
+    RUN_CONFIG_PATH = CONFIG_DIR / '.run_config.yml'
+    
+    def __init__(self, config_path):    
+        self.CONFIG_PATH = Path(config_path).resolve()
+        
+        if not self.CONFIG_PATH.is_file():
+            raise FileNotFoundError(f"Config file not found: {self.CONFIG_PATH}")
+        
+        try:
+            self.update_paths()
+        except KeyError as e:
+            raise KeyError(f"Missing required config key: {e}") from e
+    
+    
+    def update_paths(self):
+        """Update all paths based on the current config file."""
+        config = get_params(self.CONFIG_PATH)
+        
+        self.PREPARED_DATA_DIR = self.ROOT / 'data_prepared'
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / 'config' / '.run_config.yml'
-config = get_params(CONFIG_PATH)
+        self.SOURCE_DATA_DIR = self.ROOT / 'data_source'
+        self.MANTLE_DATA_DIR = self.SOURCE_DATA_DIR / 'mantle_outputs' / config['mantle_features']['mantle_dir']
+        self.DEPOSITS_PATH = self.SOURCE_DATA_DIR / 'deposits' / config['deposits_filename']
+        self.REGIONS_PATH = self.SOURCE_DATA_DIR / 'regions' / config['regions_filename']
 
-# =============== Data paths ===============
+        plate_model_name = config['plate_model']['plate_model_name'] if not config['plate_model']['use_provided_plate_model'] else "alfonso2024_default"
+        self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / plate_model_name
+        self.PLATE_MODEL_DIR = self.EXTRACTED_DATA_DIR / 'plate_models' / plate_model_name
+        self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
+        self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
 
-PREPARED_DATA_DIR = ROOT / 'data_prepared'
+        self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
+        
+        self.config = config
+    
+    
+    def create_directories(self):
+        """Create all necessary directories based on current config."""
+        config = get_params(self.CONFIG_PATH)
+    
+        for path in [self.OUTPUT_DIR]:
+            path.mkdir(parents=True, exist_ok=True)
+            
+        if config['use_extracted_data']:
+            for path in [self.EXTRACTED_DATA_DIR, self.PLATE_MODEL_DIR, self.RASTER_DATA_DIR, self.POINTS_DATA_DIR]:
+                path.mkdir(parents=True, exist_ok=True)
+    
+    
+    def validate_input_paths(self):
+        """Raise an error if any expected paths do not exist."""
+        config = get_params(self.CONFIG_PATH)
+        missing_paths = []
 
-SOURCE_DATA_DIR = ROOT / 'data_source'
-MANTLE_DATA_DIR = SOURCE_DATA_DIR / 'mantle_outputs' / config['mantle_features']['mantle_dir']
-DEPOSITS_PATH = SOURCE_DATA_DIR / "deposits" / config['deposits_filename']
-REGIONS_PATH = SOURCE_DATA_DIR / "regions" / config['regions_filename']
-
-EXTRACTED_DATA_DIR = ROOT / 'data_extracted' / config['plate_model']['plate_model_name']
-PLATE_MODEL_DIR = EXTRACTED_DATA_DIR / 'plate_models' / config['plate_model']['plate_model_name']
-RASTER_DATA_DIR = EXTRACTED_DATA_DIR / 'rasters'
-POINTS_DATA_DIR = EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
-
-OUTPUT_DIR = ROOT / 'output' / config['run_name']
-
-# =============== Initialise directories ===============
-
-for path in [EXTRACTED_DATA_DIR, PLATE_MODEL_DIR, RASTER_DATA_DIR, POINTS_DATA_DIR, OUTPUT_DIR]:
-    path.mkdir(parents=True, exist_ok=True)
+        if config['use_extracted_data']:
+            for path in [self.DEPOSITS_PATH, self.REGIONS_PATH]:
+                if not path.exists():
+                    missing_paths.append(path)
+        
+        if config['mantle_features']['use_mantle_features']:
+            for path in [self.MANTLE_DATA_DIR]:
+                if not path.exists():
+                    missing_paths.append(path)
+        
+        if missing_paths:
+            raise FileNotFoundError(f"Expected files not found: {[f'\n  - {path}' for path in missing_paths]}")
