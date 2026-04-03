@@ -4,12 +4,12 @@
 .gitattributes
 __pycache__
 
-/data/
+/data_prepared/
+/data_extracted/
+/data_source/mantle_outputs/
 /output/
-/prepared_data/
 /scripts/
 /playground/
-/.github_draft/
 
 *.pdf
 *.log

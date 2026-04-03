@@ -4,20 +4,22 @@ all_notebooks:
   # notebook section, it can be specified there on a per-notebook basis.
   run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
-    use_provided_plate_model: True
+    use_provided_plate_model: False
     plate_model_name: zahirovic2022    # used to source plate model files via PMM & name the file hierarchy
   timespan:
     min: 0
     max: 400
+
+  use_extracted_data: True       # If True, use data extracted via notebooks, rather than pre-prepared data from Zenodo
+  
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
+  deposits_filename: "deposits.csv"
   regions_filename: "regions.geojson" # optional regions file, saved in data/
-  use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
-  gadopt_run_name:                    # e.g. v1_pre_craton_fix
 
-  use_extracted_data: True
-  data_dir: data
-  output_dir: output
+  mantle_features:
+    use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
+    mantle_dir: zahirovic2022           # Directory containing desired mantle outputs
 
   n_jobs: 8
   verbose: True
