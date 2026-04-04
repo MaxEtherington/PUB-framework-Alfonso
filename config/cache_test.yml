@@ -2,10 +2,10 @@ all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
+  run_name: cache_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: false
-    plate_model_name: zahirovic2022
+    plate_model_name:
   timespan:
     min: 0
     max: 400
@@ -20,11 +20,11 @@ all_notebooks:
 
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age
-      enabled: true
+      enabled: false
     crustal:                          # e.g. crustal thickness
       enabled: false
     mantle:                           # e.g. temperature, flow velocity
-      enabled: true
+      enabled: false
       data_dir: zahirovic2022
     erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
       enabled: false
@@ -139,24 +139,20 @@ defaults:
     min: 0
     max: 170
 
-  use_extracted_data: true
+  use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
   
   deposits_filename: "deposits.csv"
-  regions_filename: "regions.geojson"
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
   
-  reference_feature: trenches
-  study_zone_buffer: 6.0 # degrees
+  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
 
-  feature_sets:
-    subduction:
-      enabled: true
-    crustal:
-      enabled: true
-    mantle:
-      enabled: false
-      data_dir: zahirovic2022
-    erodep:
-      enabled: true
+  use_subduction_features: false
+  use_crustal_features: false
+  mantle:
+    use_mantle_features: false           # if true, 01 reads training_data_global_with_mantle.csv
+    mantle_data_dir: zahirovic2022           # Directory containing desired mantle outputs
+  use_erodep: false
 
   n_jobs: 8
   verbose: true

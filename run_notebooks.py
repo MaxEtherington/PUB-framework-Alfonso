@@ -3,16 +3,16 @@
 import os
 import sys
 from pathlib import Path
-
 import papermill as pm
 
 # Local imports
-from .paths import PathConfigManager
+from lib.paths import PathConfigManager
 
 p: PathConfigManager = None
 
 # Disable ipykernel warnings
 os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
+os.environ.setdefault("OBJC_DEBUG_DUPLICATE_CLASSES", "NO")
 
 
 def _get_notebook_path(name) -> Path:
@@ -55,8 +55,9 @@ def _copy_config_to(output_path):
 
 def _find_config_path(config_path) -> Path:
     """Resolve shorthand config path to canonical path."""
-    path = Path(config_path).resolve()
-    if not path.is_file():
+    config_path = Path(config_path).with_suffix(".yml")
+    path = config_path.resolve()
+    if not path.is_file() :
         path = PathConfigManager.CONFIG_DIR / config_path
         if not path.is_file():
             raise FileNotFoundError(f"Config file not found: {config_path} (tried {path})")
@@ -76,15 +77,15 @@ def _prepare_run(config_path):
     # Write config snapshot to outputs/{run_name}/ for reproducibility
     _copy_config_to(p.OUTPUT_DIR / "config_snapshot.yml")
     
+    # Validate expected source data paths exist (e.g. deposits, mantle features)
+    p.validate_input_paths()
+    
     # Update paths and create directories based on chosen config
     p.create_directories()
-    
-    # Validate expected input paths exist (e.g. deposits, mantle features)
-    p.validate_input_paths()
 
-    print(f"Config:          {p.CONFIG_PATH}", file=sys.stderr)
-    print(f"Run config:      {p.RUN_CONFIG_PATH}", file=sys.stderr)
-    print(f"Config snapshot: {p.OUTPUT_DIR / 'config_snapshot.yml'}", file=sys.stderr)
+    print(f"Config: {p.CONFIG_PATH.relative_to(p.ROOT)}", file=sys.stderr)
+    print(f"Run config: {p.RUN_CONFIG_PATH.relative_to(p.ROOT)}", file=sys.stderr)
+    print(f"Config snapshot: {(p.OUTPUT_DIR / 'config_snapshot.yml').relative_to(p.ROOT)}", file=sys.stderr)
 
 
 def run_notebook(
@@ -92,8 +93,10 @@ def run_notebook(
     output_nb_filepath: Path = None, 
     parameters=None
 ):
-    """Run a notebook via papermill, with optional parameters and output path.
-       If output_nb_filepath is not provided, defaults to input_nb_filepath with '_output' suffix"""
+    """
+    Run a notebook via papermill, with optional parameters and output path.
+    If output_nb_filepath is not provided, defaults to input_nb_filepath with '_output' suffix
+    """
 
     input_nb_filepath = Path(input_nb_filepath)
     
@@ -129,11 +132,18 @@ def _main(args):
             "--config is required. Use --list-defaults to see available notebooks.\n"
             "  Example: python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 00b 01"
         )
+    
+    if args.setup:
+        _prepare_run(args.config)
+        from lib.cache_remote_data import cache_remote_data
+        cache_remote_data(p)
+        return 0
 
     if not args.notebooks:
         raise ValueError(
             "Must specify at least one notebook via --notebooks (e.g. --notebooks 00b 00c 01)."
         )
+
 
     # Prepare paths and directories based on config,
     # validate inputs, create config snapshot, etc.
@@ -141,12 +151,6 @@ def _main(args):
 
     # Collect and validate notebook paths
     notebook_filepaths = _get_notebook_filepaths(args.notebooks)
-
-    if args.setup:
-        from lib.setup_run import run_setup
-        run_setup(p)
-        return 0
-
 
     for notebook_filepath in notebook_filepaths:
         output_filepath = notebook_filepath if args.overwrite else None

@@ -1,13 +1,8 @@
 from copy import deepcopy
 from ruamel.yaml import YAML
 
-from .paths import PathConfigManager
-
-DEFAULT_CONFIG_PATH = PathConfigManager.CONFIG_DIR / "notebook_parameters_default.yml"
-
-
 def get_params(
-    config_path=DEFAULT_CONFIG_PATH,
+    config_path,
     notebook=None,
 ):
     yaml = YAML()

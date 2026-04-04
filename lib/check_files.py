@@ -10,9 +10,6 @@ import requests
 from tqdm import tqdm
 
 ROOT = Path(__file__).parent.absolute()
-DEFAULT_PREPARED_DATA_DIR = ROOT / ".." / "prepared_data"
-DEFAULT_MODEL_DIR = ROOT / ".." / "plate_model"
-DEFAULT_SOURCE_DATA_DIR = ROOT / ".." / "data"
 
 
 _DOI_URL = "https://doi.org/10.5281/zenodo.8157690"
@@ -21,7 +18,7 @@ _TOPOGRAPHY_URL = "https://www.earthbyte.org/webdav/ftp/earthbyte/Paleotopograph
 
 
 def check_prepared_data(
-    data_dir: Optional[Union[os.PathLike, str]] = None,
+    data_dir: Union[os.PathLike, str],
     verbose: bool = False,
     force: bool = False,
 ) -> str:
@@ -41,11 +38,9 @@ def check_prepared_data(
     data_dir : str
         The location of the downloaded data bundle.
     """
-    if data_dir is None:
-        data_dir = DEFAULT_PREPARED_DATA_DIR
     data_dir = Path(data_dir).resolve()
 
-    if force or (not os.path.isdir(data_dir)):
+    if force or (not data_dir.is_dir()) or (not any(data_dir.iterdir())):
         try:
             zenodo_url = requests.get(_DOI_URL, timeout=5).url
         except Exception:
@@ -67,7 +62,7 @@ def check_prepared_data(
 
 
 def check_source_data(
-    data_dir: Optional[Union[os.PathLike, str]] = None,
+    data_dir: Union[os.PathLike, str],
     verbose: bool = False,
     force: bool = False,
 ) -> str:
@@ -87,11 +82,9 @@ def check_source_data(
     data_dir : str
         The location of the downloaded data bundle.
     """
-    if data_dir is None:
-        data_dir = DEFAULT_SOURCE_DATA_DIR
-    data_dir = os.path.abspath(data_dir)
+    data_dir = Path(data_dir).resolve()
 
-    if force or (not os.path.isdir(data_dir)):
+    if force or (not data_dir.is_dir()) or (not any(data_dir.iterdir())):
         try:
             zenodo_url = requests.get(_DOI_URL, timeout=5).url
         except Exception:
@@ -112,7 +105,7 @@ def check_source_data(
     return data_dir
 
 def check_erodep_data(
-    data_dir: Union[os.PathLike, str] = None,
+    data_dir: Union[os.PathLike, str],
     verbose: bool = False,
     force: bool = False,
 ) -> str:
@@ -132,9 +125,6 @@ def check_erodep_data(
     data_dir : str
         The location of the downloaded data bundle.
     """
-    if data_dir is None:
-        raise ValueError("data_dir must be specified for downloading erosion/deposition data")
-    
     data_dir = Path(data_dir).resolve()
     erodep_filename = data_dir / "erosion_deposition_files.zip"
 
@@ -157,7 +147,7 @@ def check_erodep_data(
 
 
 def check_paleotopography_data(
-    data_dir: Union[os.PathLike, str] = None,
+    data_dir: Union[os.PathLike, str],
     verbose: bool = False,
     force: bool = False,
 ) -> str:
@@ -177,9 +167,6 @@ def check_paleotopography_data(
     data_dir : str
         The location of the downloaded data bundle.
     """
-    if data_dir is None:
-        raise ValueError("data_dir must be specified for downloading palaeotopography data")
-    
     data_dir = Path(data_dir).resolve()
     palaeotopo_filename = data_dir / "paleotopography-data.tgz"
 
@@ -201,7 +188,7 @@ def check_paleotopography_data(
 
 
 def check_plate_model(
-    model_dir: Optional[Union[os.PathLike, str]] = None,
+    model_dir: Union[os.PathLike, str],
     verbose: bool = False,
     force: bool = False,
 ) -> str:
@@ -221,11 +208,9 @@ def check_plate_model(
     model_dir : str
         The location of the downloaded data bundle.
     """
-    if model_dir is None:
-        model_dir = DEFAULT_MODEL_DIR
-    model_dir = os.path.abspath(model_dir)
+    model_dir = Path(model_dir).resolve()
 
-    if force or (not os.path.isdir(model_dir)):
+    if force or (not model_dir.is_dir()) or (not any(model_dir.iterdir())):
         try:
             zenodo_url = requests.get(_DOI_URL, timeout=5).url
         except Exception:
@@ -240,7 +225,7 @@ def check_plate_model(
             )
         _download_extract(
             url=url,
-            extract_dir=os.path.dirname(model_dir),
+            extract_dir=model_dir,
             verbose=verbose,
         )
     return model_dir
@@ -251,10 +236,14 @@ def _download_extract(
     archive_filename: Optional[Union[os.PathLike, str]] = None,
     verbose: bool = False,
 ):
+    url_ext = Path(url).suffix
+    if url_ext not in [".zip", ".tar", ".gz", ".tgz"]:
+        raise ValueError(f"URL must point to a .zip, .tar, .gz, or .tgz archive file (got {url_ext})")
+    
     if archive_filename is None:
         tempdir = TemporaryDirectory()
         download_dir = tempdir.name
-        basename = "data.zip"
+        basename = "data" + url_ext
         archive_filename = os.path.join(
             download_dir,
             basename,
@@ -295,6 +284,4 @@ def _fetch_data(url, download_dir, filename=None, verbose=False):
 
 
 if __name__ == "__main__":
-    check_prepared_data(verbose=True)
-    check_source_data(verbose=True)
-    check_plate_model(verbose=True)
+    raise SystemExit("Pass explicit paths when calling check_* functions.")

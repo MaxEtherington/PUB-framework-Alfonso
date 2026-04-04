@@ -7,6 +7,7 @@ __pycache__
 /data_prepared/
 /data_extracted/
 /data_source/mantle_outputs/
+/data_source/plate_models/
 /output/
 /scripts/
 /playground/
@@ -18,7 +19,3 @@ __pycache__
 *.old
 *.run_config.yml
 *.history
-
-!/data/deposits/
-!/data/deposits/*
-!/data/regions.geojson
