@@ -5,21 +5,25 @@ all_notebooks:
   run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: False
-    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name the file hierarchy
+    plate_model_name: zahirovic2022
   timespan:
     min: 0
     max: 400
 
   use_extracted_data: True       # If True, use data extracted via notebooks, rather than pre-prepared data from Zenodo
   
-  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
-  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
   deposits_filename: "deposits.csv"
   regions_filename: "regions.geojson" # optional regions file, saved in data/
+  
+  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
 
-  mantle_features:
-    use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
-    mantle_dir: zahirovic2022           # Directory containing desired mantle outputs
+  use_subduction_features: False      # whether to include subduction-related features (e.g. distance to trench, slab age) in the training data
+  use_crustal_features: False         # whether to include crustal features (e.g. crustal thickness) in the training data
+  mantle:
+    use_mantle_features: True         # whether to include mantle features in the training data
+    mantle_dir: zahirovic2022         # Directory containing desired mantle outputs
+  use_erodep: False                   # whether to calculate/run erodep routines
 
   n_jobs: 8
   verbose: True
@@ -130,18 +134,24 @@ defaults:
   timespan:
     min: 0
     max: 170
-  reference_feature: trenches
-  study_zone_buffer: 6.0 # degrees
-  regions_filename: "regions.geojson"
-  use_mantle_features: False
-  gadopt_run_name:
 
-  use_extracted_data: True
-  data_dir: data
-  output_dir: output
+  use_extracted_data: True       # If True, use data extracted via notebooks, rather than pre-prepared data from Zenodo
+  
+  deposits_filename: "deposits.csv"
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
+  
+  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
+
+  use_subduction_features: False
+  use_crustal_features: False
+  mantle:
+    use_mantle_features: False           # if true, 01 reads training_data_global_with_mantle.csv
+    mantle_dir: zahirovic2022           # Directory containing desired mantle outputs
+  use_erodep: False
 
   n_jobs: 8
-  verbose: False
+  verbose: True
   random_seed: 1234
   overwrite_output: False
 

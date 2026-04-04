@@ -1,5 +1,6 @@
 """Functions to download data bundles from Zenodo, if required."""
 import os
+from pathlib import Path
 from shutil import unpack_archive
 from sys import stderr
 from tempfile import TemporaryDirectory
@@ -8,13 +9,15 @@ from typing import Optional, Union
 import requests
 from tqdm import tqdm
 
-DIRNAME = os.path.abspath(os.path.dirname(__file__))
-DEFAULT_PREPARED_DATA_DIR = os.path.join(DIRNAME, "..", "prepared_data")
-DEFAULT_MODEL_DIR = os.path.join(DIRNAME, "..", "plate_model")
-DEFAULT_SOURCE_DATA_DIR = os.path.join(DIRNAME, "..", "data")
+ROOT = Path(__file__).parent.absolute()
+DEFAULT_PREPARED_DATA_DIR = ROOT / ".." / "prepared_data"
+DEFAULT_MODEL_DIR = ROOT / ".." / "plate_model"
+DEFAULT_SOURCE_DATA_DIR = ROOT / ".." / "data"
+
 
 _DOI_URL = "https://doi.org/10.5281/zenodo.8157690"
 _ZENODO_URL = "https://zenodo.org/record/14010839"
+_TOPOGRAPHY_URL = "https://www.earthbyte.org/webdav/ftp/earthbyte/Paleotopography/paleotopography-data.tgz"
 
 
 def check_prepared_data(
@@ -40,7 +43,7 @@ def check_prepared_data(
     """
     if data_dir is None:
         data_dir = DEFAULT_PREPARED_DATA_DIR
-    data_dir = os.path.abspath(data_dir)
+    data_dir = Path(data_dir).resolve()
 
     if force or (not os.path.isdir(data_dir)):
         try:
@@ -104,6 +107,94 @@ def check_source_data(
         _download_extract(
             url=url,
             extract_dir=os.path.dirname(data_dir),
+            verbose=verbose,
+        )
+    return data_dir
+
+def check_erodep_data(
+    data_dir: Union[os.PathLike, str] = None,
+    verbose: bool = False,
+    force: bool = False,
+) -> str:
+    """Download the erodep data bundle.
+
+    Parameters
+    ----------
+    data_dir : str
+        Directory in which to place the data bundle.
+    verbose : bool, default: False
+        Print log to stderr.
+    force : bool, default: False
+        Download data bundle even if it is already present.
+
+    Returns
+    -------
+    data_dir : str
+        The location of the downloaded data bundle.
+    """
+    if data_dir is None:
+        raise ValueError("data_dir must be specified for downloading erosion/deposition data")
+    
+    data_dir = Path(data_dir).resolve()
+    erodep_filename = data_dir / "erosion_deposition_files.zip"
+
+    if force or (not erodep_filename.is_file()):
+        zenodo_url = _ZENODO_URL
+        url = f"{zenodo_url}/files/erosion_deposition_files.zip"
+
+        if verbose:
+            print(
+                f"Downloading erosion/deposition data: {url}",
+                file=stderr,
+                flush=True,
+            )
+        _download_extract(
+            url=url,
+            extract_dir=data_dir,
+            verbose=verbose,
+        )
+    return data_dir
+
+
+def check_paleotopography_data(
+    data_dir: Union[os.PathLike, str] = None,
+    verbose: bool = False,
+    force: bool = False,
+) -> str:
+    """Download the palaeotopography data bundle.
+
+    Parameters
+    ----------
+    data_dir : str
+        Directory in which to place the data bundle.
+    verbose : bool, default: False
+        Print log to stderr.
+    force : bool, default: False
+        Download data bundle even if it is already present.
+
+    Returns
+    -------
+    data_dir : str
+        The location of the downloaded data bundle.
+    """
+    if data_dir is None:
+        raise ValueError("data_dir must be specified for downloading palaeotopography data")
+    
+    data_dir = Path(data_dir).resolve()
+    palaeotopo_filename = data_dir / "paleotopography-data.tgz"
+
+    if force or (not palaeotopo_filename.is_file()):
+        url = _TOPOGRAPHY_URL
+
+        if verbose:
+            print(
+                f"Downloading palaeotopography data: {url}",
+                file=stderr,
+                flush=True,
+            )
+        _download_extract(
+            url=url,
+            extract_dir=data_dir,
             verbose=verbose,
         )
     return data_dir
@@ -192,14 +283,15 @@ def _fetch_data(url, download_dir, filename=None, verbose=False):
         filename = "data.zip"
     filename = os.path.join(download_dir, filename)
 
-    response = requests.get(url, stream=True)
-    with open(filename, "wb") as f:
-        it = response.iter_content(chunk_size=1024)
-        if verbose:
-            it = tqdm(it, unit="kB")
-        for data in it:
-            f.write(data)
-    return filename
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        with open(filename, "wb") as f:
+            it = response.iter_content(chunk_size=1024)
+            if verbose:
+                it = tqdm(it, unit="kB")
+            for data in it:
+                f.write(data)
+        return filename
 
 
 if __name__ == "__main__":

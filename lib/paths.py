@@ -2,15 +2,16 @@ from pathlib import Path
 from load_params import get_params
 
 class PathConfigManager():
-    """Lightweight class to hold and manage project paths/config based on provided config."""
+    """Lightweight class to hold and manage project config and config-derived paths."""
     
     # Invariant paths
     ROOT            = Path(__file__).resolve().parent.parent
     CONFIG_DIR      = ROOT / 'config'
     RUN_CONFIG_PATH = CONFIG_DIR / '.run_config.yml'
     
-    def __init__(self, config_path):    
+    def __init__(self, config_path, notebook=None):    
         self.CONFIG_PATH = Path(config_path).resolve()
+        self.notebook = notebook
         
         if not self.CONFIG_PATH.is_file():
             raise FileNotFoundError(f"Config file not found: {self.CONFIG_PATH}")
@@ -23,18 +24,23 @@ class PathConfigManager():
     
     def update_paths(self):
         """Update all paths based on the current config file."""
-        config = get_params(self.CONFIG_PATH)
+        config = get_params(self.CONFIG_PATH, self.notebook)
+        
+        plate_model_name = (
+            "alfonso2024_default" if config['plate_model']['use_provided_plate_model']
+            else config['plate_model']['plate_model_name'] or "custom_plate_model"
+        )
         
         self.PREPARED_DATA_DIR = self.ROOT / 'data_prepared'
 
         self.SOURCE_DATA_DIR = self.ROOT / 'data_source'
-        self.MANTLE_DATA_DIR = self.SOURCE_DATA_DIR / 'mantle_outputs' / config['mantle_features']['mantle_dir']
+        self.PLATE_MODEL_DIR = self.SOURCE_DATA_DIR / 'plate_models' / plate_model_name
         self.DEPOSITS_PATH = self.SOURCE_DATA_DIR / 'deposits' / config['deposits_filename']
         self.REGIONS_PATH = self.SOURCE_DATA_DIR / 'regions' / config['regions_filename']
-
-        plate_model_name = config['plate_model']['plate_model_name'] if not config['plate_model']['use_provided_plate_model'] else "alfonso2024_default"
+        self.MANTLE_DATA_DIR = self.SOURCE_DATA_DIR / 'mantle_outputs' / config['mantle']['mantle_dir']
+    
+            
         self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / plate_model_name
-        self.PLATE_MODEL_DIR = self.EXTRACTED_DATA_DIR / 'plate_models' / plate_model_name
         self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
         self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
 
