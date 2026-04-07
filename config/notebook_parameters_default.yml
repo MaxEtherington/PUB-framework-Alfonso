@@ -149,14 +149,14 @@ defaults:
 
   feature_sets:
     subduction:
-      enabled: true
+      enabled: false
     crustal:
-      enabled: true
+      enabled: false
     mantle:
       enabled: false
       data_dir: zahirovic2022
     erodep:
-      enabled: true
+      enabled: false
 
   n_jobs: 8
   verbose: true

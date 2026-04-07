@@ -5,7 +5,7 @@ all_notebooks:
   run_name: cache_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: false
-    plate_model_name:
+    plate_model_name: zahirovic2022
   timespan:
     min: 0
     max: 400
