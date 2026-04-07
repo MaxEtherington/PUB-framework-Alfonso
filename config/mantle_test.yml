@@ -29,7 +29,7 @@ all_notebooks:
     erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
       enabled: false
 
-  n_jobs: 8
+  n_jobs: 14
   verbose: true
   random_seed: 1234
   overwrite_output: false
