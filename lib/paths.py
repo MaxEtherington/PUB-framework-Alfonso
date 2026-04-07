@@ -3,7 +3,7 @@ from pathlib import Path
 from .load_params import get_params
 
 class PathConfigManager():
-    """Lightweight class to hold and manage project config and config-derived paths."""
+    """Lightweight class to hold and manage project config and config-derived paths between notebooks."""
     
     # Invariant paths
     ROOT            = Path(__file__).resolve().parent.parent
@@ -15,7 +15,6 @@ class PathConfigManager():
         config_path, 
         notebook: str = None
     ):
-        # 
         self.CONFIG_PATH = Path(config_path).resolve()
         self.notebook = notebook
         
@@ -61,29 +60,20 @@ class PathConfigManager():
         self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / self.plate_model_name
         self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
         self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
-        self.TRAINING_DATA_PATH = self.EXTRACTED_DATA_DIR / 'training_data_global.csv'
-        self.GRID_DATA_PATH = self.EXTRACTED_DATA_DIR / 'grid_data.csv'
+        self.TRAINING_DATA_PATH = self.EXTRACTED_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'
+        self.GRID_DATA_PATH = self.EXTRACTED_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
         
-        # Active feature sets (e.g. subduction, crustal, mantle) are determined by config and exposed as attributes
         # Create active feature set list, paths, filenames
+        # Feature sets group related features by source data; each can be enabled/disabled in the config
         self.active_feature_sets = [
             feature_set for feature_set, params in config['feature_sets'].items() if params['enabled']
         ]
-        
-        self.feature_filepaths = {
-            name: {
-                'training': self.POINTS_DATA_DIR / f"{name}_features_training.csv",
-                'grid': self.POINTS_DATA_DIR / f"{name}_features_grid.csv",
-            }
-            for name in self.active_feature_sets
-        }
-        
-        self.use_subduction_features = 'subduction' in self.active_feature_sets
-        self.use_crustal_features = 'crustal' in self.active_feature_sets
-        self.use_mantle_features = 'mantle' in self.active_feature_sets
-        self.use_erodep = 'erodep' in self.active_feature_sets
+    
+    
+    def use_features(self, feature_set: str) -> bool:
+        return feature_set in self.active_feature_sets
     
     
     def create_directories(self):
@@ -108,7 +98,7 @@ class PathConfigManager():
                 if not path.exists():
                     missing_paths.append(path)
         
-        if self.use_mantle_features:
+        if self.use_features('mantle'):
             for path in [self.MANTLE_DATA_DIR]:
                 if not path.exists():
                     missing_paths.append(path)
