@@ -3,6 +3,7 @@
 .vscode
 .gitattributes
 __pycache__
+nb_scripts/
 
 /data_prepared/
 /data_extracted/

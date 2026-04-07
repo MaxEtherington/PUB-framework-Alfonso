@@ -1,0 +1,1 @@
+formats = "ipynb,nb_scripts//py:percent"
