@@ -140,10 +140,13 @@ def get_plate_reconstruction(
     Exception
         Propagates exceptions from PMM fetch when no valid local fallback
         model directory is available.
+    FileNotFoundError
+        If `model_name` is `None` and required files cannot be found in
+        `model_dir`.
     """
     
     model = None
-    if model_name is None: # Alfonso2024 provided reconstruction
+    if model_name is None: # Alfonso2024 provided reconstruction or custom local files
         filenames = _scan_model_dir(model_dir)
         rotation_files  = filenames['Rotations']
         topology_files  = filenames['Topologies']
@@ -153,6 +156,13 @@ def get_plate_reconstruction(
         rotation_files  = model.get_rotation_model()
         topology_files  = model.get_topologies()
         static_polygons = model.get_static_polygons()
+    if not (rotation_files and topology_files and static_polygons):
+        raise FileNotFoundError(
+            f"Missing required plate model files. Found in {model_dir} with model_name={model_name}:\n"
+            f"  Rotations: {rotation_files}\n"
+            f"  Topologies: {topology_files}\n"
+            f"  StaticPolygons: {static_polygons}\n"
+        )
     
     if filter_topologies:
         topology_features = filter_topological_features(topology_files)
