@@ -1,17 +1,20 @@
 import sys
 
 from .paths import PathConfigManager
-from .plate_models import cache_plate_model
-from .check_files import (
-    check_plate_model,
-    check_prepared_data,
-    check_erodep_data,
-    check_paleotopography_data
-)
+
+_check_files = None
+
+def _gcf():
+    """Lazily import check_files functions"""
+    global _check_files
+    if _check_files is None:
+        from . import check_files as _check_files
+    return _check_files
 
 
 def _cache_pmm_plate_model(p: PathConfigManager):
     """Cache a plate model from the EarthByte server using PlateModelManager."""
+    from .plate_models import cache_plate_model
     cache_plate_model(
         model_name=p.config['plate_model']['plate_model_name'],
         model_dir =p.PLATE_MODEL_DIR
@@ -20,7 +23,7 @@ def _cache_pmm_plate_model(p: PathConfigManager):
 
 def _cache_zenodo_plate_model(p: PathConfigManager):
     """Cache plate model from Alfonso 2024 et al. Zenodo repository."""
-    check_plate_model(
+    _gcf().check_plate_model(
         model_dir=p.PLATE_MODEL_DIR,
         verbose  =p.config['verbose'],
         force    =p.config['overwrite_output']
@@ -29,7 +32,7 @@ def _cache_zenodo_plate_model(p: PathConfigManager):
 
 def _cache_prepared_training_grid_data(p: PathConfigManager):
     """Cache prepared training and grid data from Alfonso 2024 et al. Zenodo repository."""
-    check_prepared_data(
+    _gcf().check_prepared_data(
         data_dir=p.PREPARED_DATA_DIR,
         verbose =p.config['verbose'],
         force   =p.config['overwrite_output']
@@ -38,7 +41,7 @@ def _cache_prepared_training_grid_data(p: PathConfigManager):
 
 def _cache_erodep_data(p: PathConfigManager):
     """Cache erosion and deposition data bundle from Alfonso 2024 et al. Zenodo repository."""
-    check_erodep_data(
+    _gcf().check_erodep_data(
         data_dir=p.RASTER_DATA_DIR / "erodep_outputs",
         verbose =p.config['verbose'],
         force   =p.config['overwrite_output']
@@ -47,7 +50,7 @@ def _cache_erodep_data(p: PathConfigManager):
     
 def _cache_paleotopography_data(p: PathConfigManager):
     """Cache palaeotopography data from EarthByte server."""
-    check_paleotopography_data(
+    _gcf().check_paleotopography_data(
         data_dir=p.RASTER_DATA_DIR / "crust_outputs" / "paleotopography",
         verbose =p.config['verbose'],
         force   =p.config['overwrite_output']
@@ -75,12 +78,12 @@ def cache_remote_data(p: PathConfigManager):
         print(f"Plate model:     PlateModel '{p.plate_model_name}' ready\n", file=sys.stderr)
 
     # Cache erodep data
-    if p.use_erodep:
+    if p.use_features("erodep"):
         _cache_erodep_data(p)
         print("Erodep data:     erosion/deposition data ready\n", file=sys.stderr)
     
     # Cache palaeotopography data
-    if p.use_crustal_features:
+    if p.use_features("crustal"):
         _cache_paleotopography_data(p)
         print("Palaeotopography data:     palaeotopography data ready\n", file=sys.stderr)
 
