@@ -11,6 +11,7 @@ from .misc import _PathLike
 
 # Non-dimensionalisation offset used by G-ADOPT: surface radius in Earth radii.
 _GADOPT_SURFACE_R = 2.208
+_MANTLE_THICKNESS = 2891.0  # km
 
 DEFAULT_DEPTHS: np.ndarray = np.arange(100, 2900, 100)  # km
 MANTLE_FIELDS: tuple[str, ...] = (
@@ -28,12 +29,12 @@ MANTLE_FIELDS: tuple[str, ...] = (
 
 def _to_km(depths: ArrayLike) -> np.ndarray:
     """Convert G-ADOPT nondimensionalised depths to km below surface."""
-    return (_GADOPT_SURFACE_R - np.asarray(depths, dtype=float)) * gplt.EARTH_RADIUS
+    return (_GADOPT_SURFACE_R - np.asarray(depths, dtype=float)) * _MANTLE_THICKNESS
 
 
 def _to_nondim(depths_km: ArrayLike) -> np.ndarray:
     """Convert depths in km below surface to G-ADOPT nondimensionalised depths."""
-    return _GADOPT_SURFACE_R - (np.asarray(depths_km, dtype=float) / gplt.EARTH_RADIUS)
+    return _GADOPT_SURFACE_R - (np.asarray(depths_km, dtype=float) / _MANTLE_THICKNESS)
 
 
 def _detect_lon_convention(lon_values: ArrayLike) -> str | None:
@@ -161,10 +162,10 @@ def _sample_mantle(
 
 
 def extract_basic_mantle_features(
-    mantle_dir: _PathLike,
     points: pd.DataFrame,
+    mantle_dir: _PathLike,
     depths_km: ArrayLike = DEFAULT_DEPTHS,
-    mantle_fields: ArrayLike = MANTLE_FIELDS,
+    output_fields: ArrayLike = MANTLE_FIELDS,
 ) -> pd.DataFrame:
     """Extract basic mantle features at a series of labelled points.
 
@@ -193,7 +194,7 @@ def extract_basic_mantle_features(
         combine='nested',
         concat_dim='time',
     ) as ds:
-        for var in mantle_fields:
+        for var in output_fields:
             sampled = _sample_mantle(
                 ds=ds,
                 var=var,
