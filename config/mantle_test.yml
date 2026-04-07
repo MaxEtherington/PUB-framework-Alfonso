@@ -4,27 +4,35 @@ all_notebooks:
   # notebook section, it can be specified there on a per-notebook basis.
   run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
   plate_model:
-    use_provided_plate_model: False
-    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name file hierarchy
+    use_provided_plate_model: false
+    plate_model_name: zahirovic2022
   timespan:
     min: 0
     max: 400
+
+  use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
+  
+  deposits_filename: "deposits-Etherington.csv"
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
+  
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
-  regions_filename: "regions.geojson" # optional regions file, saved in data/
-  deposits_filename: "deposits-Etherington.csv"
 
-  use_mantle_features: True           # if true, 01 reads training_data_global_with_mantle.csv
-  gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
-
-  use_extracted_data: True
-  data_dir: data
-  output_dir: output
+  feature_sets:
+    subduction:                       # e.g. distance to trench, slab age
+      enabled: false
+    crustal:                          # e.g. crustal thickness
+      enabled: false
+    mantle:                           # e.g. temperature, flow velocity
+      enabled: true
+      data_dir: zahirovic2022
+    erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
+      enabled: false
 
   n_jobs: 8
-  verbose: True
+  verbose: true
   random_seed: 1234
-  overwrite_output: False
+  overwrite_output: false
 
 
 notebook_00a:
@@ -40,22 +48,15 @@ notebook_00b:
   random_seed:
   overwrite_output:
   extracted_data_dir:
+  regions_filename:
+  deposits_filename:
   num_unlabelled: 200
-
-notebook_00bb:
-  n_jobs:
-  verbose:
-  timespan:
-  random_seed:
-  overwrite_output:
-  extracted_data_dir:
-  num_unlabelled: 200
-  grid_resolution: 0.5
 
 notebook_00c:
   n_jobs:
   verbose:
   timespan:
+  regions_filename:
   overwrite_output: false
   grid_resolution: 0.5
 
@@ -63,6 +64,7 @@ notebook_00d:
   n_jobs:
   verbose:
   timespan:
+  regions_filename:
   overwrite_output:
 
 notebook_01:
@@ -73,7 +75,7 @@ notebook_01:
   use_extracted_data:
   overwrite_output:
   use_same_features: true
-  automatic_feature_selection: true
+  automatic_feature_selection: false
   create_svm: true
   create_regional_models: true
 
@@ -131,27 +133,33 @@ defaults:
   # the default values here will be used.
   run_name: default
   plate_model:
-    use_provided_plate_model: True
+    use_provided_plate_model: true
     plate_model_name: alfonso2024_default
   timespan:
     min: 0
     max: 170
-  reference_feature: trenches
-  study_zone_buffer: 6.0 # degrees
-  regions_filename: "regions.geojson"
-  use_mantle_features: False
-  gadopt_run_name:
 
-  use_extracted_data: True
-  data_dir: data
-  output_dir: output
+  use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
+  
+  deposits_filename: "deposits.csv"
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
+  
+  reference_feature: trenches         # geometry used to define study area and unlabelled sampling
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
+
+  use_subduction_features: false
+  use_crustal_features: false
+  mantle:
+    use_mantle_features: false           # if true, 01 reads training_data_global_with_mantle.csv
+    mantle_data_dir: zahirovic2022           # Directory containing desired mantle outputs
+  use_erodep: false
 
   n_jobs: 8
-  verbose: False
+  verbose: true
   random_seed: 1234
-  overwrite_output: False
+  overwrite_output: false
 
-  use_same_features: True
-  automatic_feature_selection: False
-  create_svm: True
-  create_regional_models: True
+  use_same_features: true
+  automatic_feature_selection: false
+  create_svm: true
+  create_regional_models: true
