@@ -4,6 +4,7 @@ zones.
 import os
 import warnings
 from sys import stderr
+import copy
 from typing import (
     Hashable,
     Iterable,
@@ -99,6 +100,22 @@ def run_create_study_area_polygons(
             )
         os.makedirs(output_dir, exist_ok=True)
 
+    # Avoid sending unpickleable child `PlateModel` objects to worker processes
+    if plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
+
+    if nprocs <= 1:
+        return _multiple_timesteps(
+            times=times,
+            plate_reconstruction=plate_reconstruction,
+            topological_features=topological_features,
+            rotation_model=rotation_model,
+            output_dir=output_dir,
+            buffer_distance=buffer_distance,
+            return_output=return_output,
+        )
+
     times_split = np.array_split(times, nprocs)
     with Parallel(nprocs, verbose=int(verbose)) as parallel:
         results = parallel(
@@ -139,6 +156,12 @@ def _multiple_timesteps(
             )
         if not isinstance(rotation_model, pygplates.RotationModel):
             rotation_model = pygplates.RotationModel(rotation_model)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            plate_reconstruction = PlateReconstruction(
+                rotation_model=rotation_model,
+                topology_features=topological_features,
+            )
 
     out = []
     for time in times:

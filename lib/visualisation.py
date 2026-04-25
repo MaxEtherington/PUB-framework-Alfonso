@@ -57,8 +57,7 @@ TEETH_KWARGS = {
     "size": 8,
     "aspect": 0.7,
     "spacing": 0.15,
-    "markerfacecolor": "black",
-    "markeredgecolor": "black",
+    "color": "black",
     "zorder": TOPOLOGIES_KWARGS["zorder"],
 }
 SCATTER_KWARGS = {

@@ -1,17 +1,12 @@
 from copy import deepcopy
-from pathlib import Path
-
 from ruamel.yaml import YAML
 
-_DEFAULT_CONFIG = Path(__file__).parent.parent / "config" / "notebook_parameters_default.yml"
-
-
 def get_params(
-    filename=_DEFAULT_CONFIG,
+    config_path,
     notebook=None,
 ):
     yaml = YAML()
-    with open(filename, "r") as f:
+    with open(config_path, "r") as f:
         data = yaml.load(f)
 
     defaults = data["defaults"]

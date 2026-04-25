@@ -2,44 +2,34 @@ all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
+  run_name: zahirovic-baseline                  # used as output directory name: outputs/{run_name}/
   plate_model:
-    use_provided_plate_model: false
-    plate_model_name: zahirovic2022
+    use_provided_plate_model: False
+    plate_model_name: zahirovic2022    # used to source plate model files via PMM & name file hierarchy
   timespan:
     min: 0
     max: 400
-
-  use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
-  
-  deposits_filename: "deposits-Etherington.csv"
-  regions_filename: "regions.geojson" # optional regions file, saved in data/
-  
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
   study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
+  regions_filename: "regions.geojson" # optional regions file, saved in data/
+  use_mantle_features: False          # if true, 01 reads training_data_global_with_mantle.csv
+  gadopt_run_name:                    # e.g. v1_pre_craton_fix; required when use_mantle_features: true
 
-  feature_sets:
-    subduction:                       # e.g. distance to trench, slab age
-      enabled: true
-    crustal:                          # e.g. crustal thickness
-      enabled: false
-    mantle:                           # e.g. temperature, flow velocity
-      enabled: true
-      data_dir: zahirovic2022
-    erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
-      enabled: false
+  use_extracted_data: True
+  data_dir: data
+  output_dir: output
 
   n_jobs: 8
-  verbose: true
+  verbose: True
   random_seed: 1234
-  overwrite_output: false
+  overwrite_output: False
 
 
 notebook_00a:
-  overwrite_output: false
+  overwrite_output: False
   n_jobs:
   timespan:
-  cleanup: false
+  cleanup: False
 
 notebook_00b:
   n_jobs:
@@ -49,7 +39,7 @@ notebook_00b:
   overwrite_output:
   extracted_data_dir:
   regions_filename:
-  deposits_filename:
+  deposits_filename: "deposits-Etherington.csv"
   num_unlabelled: 200
 
 notebook_00c:
@@ -57,15 +47,8 @@ notebook_00c:
   verbose:
   timespan:
   regions_filename:
-  overwrite_output: false
+  overwrite_output: False
   grid_resolution: 0.5
-
-notebook_00d:
-  n_jobs:
-  verbose:
-  timespan:
-  regions_filename:
-  overwrite_output:
 
 notebook_01:
   output_dir:
@@ -74,10 +57,10 @@ notebook_01:
   random_seed:
   use_extracted_data:
   overwrite_output:
-  use_same_features: true
-  automatic_feature_selection: false
-  create_svm: true
-  create_regional_models: true
+  use_same_features: True
+  automatic_feature_selection: False
+  create_svm: True
+  create_regional_models: True
 
 notebook_02:
   output_dir:
@@ -133,37 +116,27 @@ defaults:
   # the default values here will be used.
   run_name: default
   plate_model:
-    use_provided_plate_model: true
+    use_provided_plate_model: True
     plate_model_name: alfonso2024_default
   timespan:
     min: 0
     max: 170
-
-  use_extracted_data: true
-  
-  deposits_filename: "deposits.csv"
-  regions_filename: "regions.geojson"
-  
   reference_feature: trenches
   study_zone_buffer: 6.0 # degrees
+  regions_filename: "regions.geojson"
+  use_mantle_features: False
+  gadopt_run_name:
 
-  feature_sets:
-    subduction:
-      enabled: false
-    crustal:
-      enabled: false
-    mantle:
-      enabled: false
-      data_dir: zahirovic2022
-    erodep:
-      enabled: false
+  use_extracted_data: True
+  data_dir: data
+  output_dir: output
 
   n_jobs: 8
-  verbose: true
+  verbose: False
   random_seed: 1234
-  overwrite_output: false
+  overwrite_output: False
 
-  use_same_features: true
-  automatic_feature_selection: false
-  create_svm: true
-  create_regional_models: true
+  use_same_features: True
+  automatic_feature_selection: False
+  create_svm: True
+  create_regional_models: True

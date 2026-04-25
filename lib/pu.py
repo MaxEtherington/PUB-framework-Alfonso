@@ -3,6 +3,7 @@ import os
 import warnings
 from multiprocessing import cpu_count
 from sys import stderr
+import copy
 
 import geopandas as gpd
 import numpy as np
@@ -412,6 +413,10 @@ def generate_grid_points(
             topology_features=topological_features,
             rotation_model=rotation_model,
         )
+    # Avoid sending unpickleable child `PlateModel` objects to worker processes
+    elif plate_reconstruction is not None and plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
 
     with Parallel(n_jobs, verbose=int(verbose)) as parallel:
         out = parallel(

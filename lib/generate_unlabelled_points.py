@@ -3,6 +3,7 @@ import concurrent.futures
 import os
 import warnings
 from sys import stderr
+import copy
 
 import geopandas as gpd
 import numpy as np
@@ -10,6 +11,7 @@ import pandas as pd
 import pygplates
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", UserWarning)
+    from gplately import PlateReconstruction
     from gplately.tools import xyz2lonlat
 from joblib import Parallel, delayed
 from shapely.geometry import Point
@@ -30,7 +32,7 @@ def generate_unlabelled_points(
     topological_features=None,
     rotation_model=None,
     verbose=False,
-):
+) -> pd.DataFrame:
     """Generate uniformly-distributed points on the unit sphere.
 
     Parameters
@@ -67,6 +69,16 @@ def generate_unlabelled_points(
     rngs = [np.random.default_rng(i) for i in seq.spawn(threads)]
     times_split = np.array_split(times, threads)
 
+    if plate_reconstruction is None:
+        plate_reconstruction = PlateReconstruction(
+            topology_features=topological_features,
+            rotation_model=rotation_model,
+        )
+    # Avoid sending unpickleable child `PlateModel` objects to worker processes
+    elif plate_reconstruction is not None and plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
+    
     with Parallel(threads, verbose=int(verbose)) as p:
         results = p(
             delayed(_multiple_timesteps)(
@@ -130,6 +142,12 @@ def _multiple_timesteps(
             )
         if not isinstance(rotation_model, pygplates.RotationModel):
             rotation_model = pygplates.RotationModel(rotation_model)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ImportWarning)
+            plate_reconstruction = PlateReconstruction(
+                rotation_model=rotation_model,
+                topology_features=topological_features,
+            )
 
     out = []
     for time in times:
