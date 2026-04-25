@@ -133,10 +133,14 @@ def _main(args):
             "  Example: python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 00b 01"
         )
     
-    if args.setup:
+    if args.cache_remote:
         _prepare_run(args.config)
         from lib.cache_remote_data import cache_remote_data
         cache_remote_data(p)
+        return 0
+    
+    if args.setup:
+        _prepare_run(args.config)
         return 0
 
     if not args.notebooks:
@@ -197,6 +201,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cache-remote",
         help="cache remotely-hosted data (e.g. plate models), then exit; use when notebooks are run on a machine without internet access (e.g. HPC)",
+        action="store_true",
+        dest="cache_remote",
+    )
+    parser.add_argument(
+        "--setup",
+        help="refresh config references, set up filestructure, then exit",
         action="store_true",
         dest="setup",
     )
