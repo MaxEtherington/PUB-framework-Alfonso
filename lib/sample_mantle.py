@@ -156,8 +156,8 @@ def _sample_mantle(
     )
 
     if np.isnan(result).any():
-        raise ValueError("NaN values found in sampled mantle data. Check that all points are within the dataset bounds.")
-    
+        print(f"Warning: NaN values found in sampled mantle data ({var.name}). Check that all points are within the dataset bounds.")
+
     return result
 
 
