@@ -1,22 +1,22 @@
 """Functions to sample mantle data from G-ADOPT
 output grids and join to point data.
 """
+from typing import Callable, Any
+
 import numpy as np
 import pandas as pd
 import xarray as xr
 import pint_xarray # noqa: F401
-import gplately as gplt
 import warnings
 
 from numpy.typing import ArrayLike
-from .misc import _PathLike
 
 # Non-dimensionalisation offset used by G-ADOPT: surface radius in Earth radii.
 _GADOPT_SURFACE_R = 2.208
 _MANTLE_THICKNESS = 2891.0  # km
 
 DEFAULT_DEPTHS: np.ndarray = np.arange(100, 500, 100)  # km (upper mantle)
-BASE_MANTLE_VARS: set[str, ...] = {
+BASE_MANTLE_VARS: list[str] = [
     "FullTemperature_CG",
     "Pressure",
     "Radial_Velocity",
@@ -28,7 +28,7 @@ BASE_MANTLE_VARS: set[str, ...] = {
     "Viscosity_CG",
     "East_Velocity",
     "North_Velocity",
-}
+]
 
 # ==================
 # Feature registry
@@ -37,8 +37,8 @@ BASE_MANTLE_VARS: set[str, ...] = {
 
 class MantleVariableRegistry:
     def __init__(self):
-        self._variables: dict[str, callable] = {}
-        self._transforms: dict[str, callable] = {}
+        self._variables: dict[str, Callable[..., Any]] = {}
+        self._transforms: dict[str, Callable[..., Any]] = {}
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -72,9 +72,15 @@ class MantleVariableRegistry:
     def get(self, name: str, ds: xr.Dataset) -> xr.DataArray:
         if name not in self._variables:
             raise KeyError(f"Unknown variable: '{name}'. Available: {list(self._variables)}")
+        
+        if name in ds.data_vars:
+            return ds[name]
+        
         result = self._variables[name](ds)
+        ds[name] = result  # Cache in dataset for future retrievals
         return result.rename(name) if isinstance(result, xr.DataArray) else result
 
+    @property
     def available(self) -> list[str]:
         return list(self._variables)
 
@@ -100,7 +106,7 @@ def _to_nondim(depths_km: ArrayLike) -> np.ndarray:
 
 
 # ==================
-# Derived varaibles
+# Derived variables
 # ==================
 
 @variables.register("Cell_Volume")
@@ -190,17 +196,6 @@ def _slab_depth(ds: xr.Dataset) -> xr.DataArray:
     pass
 
 
-# Features requiring plate velocities (need to be extracted from plate model) (perhaps a different feature registry/module?) (TODO)
-
-
-def _plate_velocity_delta(ds: xr.Dataset) -> xr.DataArray: #TODO
-    pass
-
-
-def _relative_tangential_velocity(ds: xr.Dataset) -> xr.DataArray: #TODO
-    pass  
-
-
 # ==================
 # Transforms
 # ==================
@@ -221,6 +216,21 @@ def _average_over_depth(
 
     da = da.sel(depth=(da.depth >= d0) & (da.depth <= d1)).mean(dim="depth")
     return da.rename(f"{var_name}_avg_{int(d0)}-{int(d1)}km")
+
+
+def _average_over_rolling_time(
+    ds: xr.Dataset,
+    var_name: str,
+    window_size: int,
+) -> xr.DataArray:
+    """Calculate a rolling average of a variable over time."""
+    da = variables.get(var_name, ds)
+    if "time" not in da.dims:
+        raise ValueError(f"'{var_name}' has no 'time' dimension.")
+    
+    da.sortby("time", ascending=False)  # Ensure time (Ma) decreases so rolling average looks backward
+    da = da.rolling(time=window_size, center=True, min_periods=1).mean()
+    return da.rename(f"{var_name}_rolling_avg_{window_size}timesteps")
 
 
 # ==================
@@ -284,64 +294,16 @@ def _wrap_longitude_seam(
     return da_cyclic
 
 
-def sample_mantle_var(
+def _do_interp_cyclic_lon(
     da: xr.DataArray,
-    lons: ArrayLike = None,
-    lats: ArrayLike = None,
-    times: ArrayLike = None,
-    depths: ArrayLike = None,
+    lons: ArrayLike,
+    lats: ArrayLike,
+    times: ArrayLike,
+    depths: ArrayLike,
+    broadcast_depth: bool,
     method: str = "linear",
-) -> (pd.Series | pd.DataFrame):
-    """Interpolate a mantle data array at requested coordinates.
-
-    This function validates that every dimension in ``da`` has a matching
-    coordinate argument. Only coordinates for dimensions present in ``da`` are
-    passed to :meth:`xarray.DataArray.interp`.
-
-    If longitude sampling is requested, longitudes are first normalized to the
-    dataset convention, then the longitude seam is wrapped to support cyclic
-    interpolation across 0/360.
-
-    Depth handling is shape-based:
-    - If ``depth`` is a dimension in ``da`` and ``depths`` is interpreted as an
-      independent axis, depth is passed orthogonally (dimension ``("depth",)``), 
-      and outputs will be broadcast for each depth value.
-    - Otherwise, depth is treated as point-wise and passed with
-      dimension ``("points",)``.
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        Data array to sample.
-    lons, lats, times, depths : array-like or None
-        Candidate interpolation coordinates. Any coordinate corresponding to a
-        dimension in ``da`` must be provided.
-    method : {'linear', 'nearest'}, optional
-        Interpolation method passed to ``xarray.DataArray.interp``.
-
-    Returns
-    -------
-    np.ndarray
-        Interpolated values. Output shape follows xarray interpolation semantics
-        for the provided coordinate dimensions.
-    """
-    
-    # Check if available coordinates match those of the data array; if not, raise an error
-    coord_map = {"lon": lons, "lat": lats, "time": times, "depth": depths}
-    for coord in da.dims:
-        if coord_map.get(coord) is None:
-            raise ValueError(
-                f"Data array '{da.name}' has dimension '{coord}' but no corresponding coordinates were provided."
-            )
-    
-    broadcast_depth_axis = False
-    if depths is not None:
-        depths_arr = np.asarray(depths, dtype=float)
-        broadcast_depth_axis = depths_arr.ndim == 1 and all(
-            np.asarray(c).size != len(depths_arr)
-            for c in (lons, lats, times) if c is not None
-        )
-    
+) -> pd.Series | pd.DataFrame:
+    """Interpolate with cyclic longitude; depth is broadcast when requested."""
     if lons is not None:
         lons = _match_longitude_convention(da=da, lons=lons)
         da = _wrap_longitude_seam(da)
@@ -355,10 +317,9 @@ def sample_mantle_var(
         interp_coords["time"] = xr.DataArray(np.asarray(times, dtype=float), dims="points")
     if "depth" in da.dims:
         depths_arr = np.asarray(depths, dtype=float)
-        # Broadcast depth axis if needed to match point-wise coordinates.
         interp_coords["depth"] = (
             xr.DataArray(depths_arr, dims="depth")
-            if broadcast_depth_axis
+            if broadcast_depth
             else xr.DataArray(depths_arr, dims="points")
         )
 
@@ -368,6 +329,62 @@ def sample_mantle_var(
         warnings.warn(f"NaN values found in sampled mantle data ({da.name}). Check that all points are within the dataset bounds.")
 
     return result
+
+
+def sample_mantle_var(
+    da: xr.DataArray,
+    lons: ArrayLike = None,
+    lats: ArrayLike = None,
+    times: ArrayLike = None,
+    depths: ArrayLike = None,
+    method: str = "linear",
+) -> pd.Series | pd.DataFrame:
+    """Interpolate with point-wise depth (never depth-broadcasted)."""
+    # Check if available coordinates match those of the data array; if not, raise an error
+    coord_map = {"lon": lons, "lat": lats, "time": times, "depth": depths}
+    for coord in da.dims:
+        if coord_map.get(coord) is None:
+            raise ValueError(
+                f"Data array '{da.name}' has dimension '{coord}' but no corresponding coordinates were provided."
+            )
+    
+    return _do_interp_cyclic_lon(
+        da=da,
+        lons=lons,
+        lats=lats,
+        times=times,
+        depths=depths,
+        broadcast_depth=False,
+        method=method,
+    )
+
+
+def sample_mantle_var_depths(
+    da: xr.DataArray,
+    lons: ArrayLike = None,
+    lats: ArrayLike = None,
+    times: ArrayLike = None,
+    depths: ArrayLike = None,
+    method: str = "linear",
+) -> pd.Series | pd.DataFrame:
+    """Interpolate with depth as an orthogonal axis (always broadcasted)."""
+    # Check if available coordinates match those of the data array; if not, raise an error
+    coord_map = {"lon": lons, "lat": lats, "time": times, "depth": depths}
+    for coord in da.dims:
+        if coord_map.get(coord) is None:
+            raise ValueError(
+                f"Data array '{da.name}' has dimension '{coord}' but no corresponding coordinates were provided."
+            )
+    
+    return _do_interp_cyclic_lon(
+        da=da,
+        lons=lons,
+        lats=lats,
+        times=times,
+        depths=depths,
+        broadcast_depth=True,
+        method=method,
+    )
 
 
 def _sample_LAB_depths(
@@ -397,74 +414,4 @@ def _sample_LAB_depths(
 
 
 def calculate_lambdas(da: xr.DataArray, n_lambdas: int=5) -> pd.DataFrame:
-    pass
-
-
-# ==================
-# API functions
-# ==================
-
-def extract_basic_mantle_features(
-    points: pd.DataFrame,
-    mantle_dir: _PathLike,
-    depths: ArrayLike|str = DEFAULT_DEPTHS,
-    features_to_extract: ArrayLike = BASE_MANTLE_VARS,
-) -> pd.DataFrame:
-    """Extract values of mantle fields at (time, depth, lat, lon) points.
-
-    Parameters
-    ----------
-    mantle_dir : path-like
-        Directory containing G-ADOPT output files.
-    points : DataFrame
-        Must contain columns 'lon', 'lat', and 'age (Ma)'.
-    depths : array-like, optional
-        Depths in km below surface. Default is `DEFAULT_DEPTHS` (100, 200, 300, 400 km).
-        If size of `depths` matches number of rows in `points`, each point is sampled at its corresponding depth.
-        Otherwise, 
-    features_to_extract : array-like of str, optional
-        Names of mantle variables to extract.
-
-    Returns
-    -------
-    DataFrame
-        Copy of `points` with additional columns for each sampled mantle
-        variable and depth (e.g. 'Temperature_Deviation_CG_100km').
-    """
-    depths = list(depths)
-    out = points.copy()
-    new_cols = {}
-
-    with xr.open_mfdataset(
-        sorted(mantle_dir.glob("*.nc")),
-        combine='nested',
-        concat_dim='time',
-        chunks={"time": 1, "depth": 25},
-    ) as ds:
-        for var in features_to_extract:
-            sampled = sample_mantle_var(
-                ds=ds,
-                var=var,
-                lons=points["lon"],
-                lats=points["lat"],
-                times=points["age (Ma)"],
-                depths=depths,
-            )
-            for i, depth_km in enumerate(depths):
-                new_cols[f"{var}_{int(depth_km)}km"] = sampled[:, i]
-
-    # Join all new columns at once to avoid DataFrame fragmentation.
-    if new_cols:
-        out = pd.concat([out, pd.DataFrame(new_cols, index=out.index)], axis=1)
-
-    return out
-
-
-def extract_derived_mantle_features(
-    mantle_dir: _PathLike, 
-    points: pd.DataFrame, 
-    depths: ArrayLike = DEFAULT_DEPTHS,
-    features_to_extract: ArrayLike = None,
-) -> pd.DataFrame:
-    """Calculate derived mantle features and add to dataset."""
     pass
