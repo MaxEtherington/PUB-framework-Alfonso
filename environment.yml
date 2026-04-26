@@ -39,6 +39,7 @@ dependencies:
   - shapely=2.1.2
   - tqdm=4.67.3
   - xarray=2025.11.0
+  - pint-xarray-0.6.1
   - pip:
       - gplately==2.0.0
       - platetectonictools==0.4.1
