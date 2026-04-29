@@ -1,6 +1,7 @@
 """Functions to sample mantle data from G-ADOPT
 output grids and join to point data.
 """
+from dataclasses import dataclass
 from typing import Callable, Any
 
 import numpy as np
@@ -34,10 +35,16 @@ BASE_MANTLE_VARS: list[str] = [
 # Feature registry
 # ==================
 
+@dataclass
+class MantleVariable:
+    """A registered mantle variable with a computation function."""
+    name: str
+    compute: Callable[..., xr.DataArray]
+
 
 class MantleVariableRegistry:
     def __init__(self):
-        self._variables: dict[str, Callable[..., Any]] = {}
+        self._variables: dict[str, MantleVariable] = {}
         self._transforms: dict[str, Callable[..., Any]] = {}
 
     # ── Registration ──────────────────────────────────────────────────────────
@@ -45,14 +52,17 @@ class MantleVariableRegistry:
     def register(self, name: str):
         """Decorator to register a variable computation function."""
         def decorator(fn):
-            self._variables[name] = fn
+            self._variables[name] = MantleVariable(name=name, compute=fn)
             return fn
         return decorator
     
     def register_base(self, *names: str):
         """Register one or more base variables that are loaded directly from the dataset."""
         for name in names:
-            self._variables[name] = lambda ds, n=name: ds[n]
+            self._variables[name] = MantleVariable(
+                name=name,
+                compute=lambda ds, n=name: ds[n],
+            )
 
     def register_transform(self, name: str):
         """Register a named transformation (e.g. depth averaging)."""
@@ -65,7 +75,10 @@ class MantleVariableRegistry:
         """Register a new named variable by applying a transform to an existing one."""
         if transform not in self._transforms:
             raise KeyError(f"Unknown transform: '{transform}'. Available: {list(self._transforms)}")
-        self._variables[name] = lambda ds: self._transforms[transform](ds, **kwargs)
+        self._variables[name] = MantleVariable(
+            name=name,
+            compute=lambda ds: self._transforms[transform](ds, **kwargs),
+        )
 
     # ── Retrieval ─────────────────────────────────────────────────────────────
 
@@ -76,7 +89,7 @@ class MantleVariableRegistry:
         if name in ds.data_vars:
             return ds[name]
         
-        result = self._variables[name](ds)
+        result = self._variables[name].compute(ds)
         ds[name] = result  # Cache in dataset for future retrievals
         return result.rename(name) if isinstance(result, xr.DataArray) else result
 
@@ -156,9 +169,9 @@ def _speed(ds: xr.Dataset) -> xr.DataArray:
 def _tangential_speed(ds: xr.Dataset) -> xr.DataArray:
     """Calculate tangential speed from velocity components."""
     ds = ds.pint.quantify()
-    
     ve = ds["East_Velocity"]
     vn = ds["North_Velocity"]
+    
     da = np.sqrt(ve**2 + vn**2)
     
     da.attrs = {"long_name": "tangential speed"}
@@ -169,10 +182,11 @@ def _tangential_speed(ds: xr.Dataset) -> xr.DataArray:
 @variables.register("Radial_Tangential_Ratio")
 def _radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
     """Calculate radial-to-tangential velocity ratio."""
-    ds = ds.pint.quantify()
-    
     vr = ds["Radial_Velocity"]
     vt = _tangential_speed(ds)
+    
+    for v in [vr, vt]:
+        v = v.pint.quantify()
     da = np.abs(vr) / vt
     
     da.attrs = {"long_name": "radial-to-tangential velocity ratio"}
@@ -194,6 +208,7 @@ def _LAB_depth(ds: xr.Dataset) -> xr.DataArray:
 @variables.register("Slab_Depth") #TODO
 def _slab_depth(ds: xr.Dataset) -> xr.DataArray:
     pass
+
 
 
 # ==================
@@ -218,6 +233,7 @@ def _average_over_depth(
     return da.rename(f"{var_name}_avg_{int(d0)}-{int(d1)}km")
 
 
+@variables.register_transform("average_over_rolling_time") #TODO
 def _average_over_rolling_time(
     ds: xr.Dataset,
     var_name: str,
@@ -230,11 +246,32 @@ def _average_over_rolling_time(
     
     da.sortby("time", ascending=False)  # Ensure time (Ma) decreases so rolling average looks backward
     da = da.rolling(time=window_size, center=True, min_periods=1).mean()
-    return da.rename(f"{var_name}_rolling_avg_{window_size}timesteps")
+    return da.rename(f"{var_name}_rolling_{window_size}Ma")
 
 
 # ==================
-# Feature extraction
+# Transformed variables
+# ==================
+
+for t, b in [(0, 400), (100, 400)]:
+    av_name = f"Temperature_Deviation_avg_{t}-{b}km"
+    variables.register_derived(
+        name=av_name,
+        transform="average_over_depth",
+        var_name="Temperature_Deviation_CG",
+        depth_range=(t, b),
+    )
+    for window in [30, 50]:
+        variables.register_derived(
+            name=f"{av_name}_rolling_{window}Ma",
+            transform="average_over_rolling_time",
+            var_name=av_name,
+            window_size=window,
+        )
+
+
+# ==================
+# Sampling utilities
 # ==================
 
 
@@ -300,10 +337,14 @@ def _do_interp_cyclic_lon(
     lats: ArrayLike,
     times: ArrayLike,
     depths: ArrayLike,
-    broadcast_depth: bool,
+    broadcast_depth: bool = False,
     method: str = "linear",
-) -> pd.Series | pd.DataFrame:
-    """Interpolate with cyclic longitude; depth is broadcast when requested."""
+) -> xr.DataArray:
+    """
+    Interpolate with cyclic longitude; depth is broadcast (treated as orthogonal) when requested.
+    
+    If `depths` is `None`, return the full depth profile at each (time, lat, lon) point.
+    """
     if lons is not None:
         lons = _match_longitude_convention(da=da, lons=lons)
         da = _wrap_longitude_seam(da)
@@ -323,9 +364,9 @@ def _do_interp_cyclic_lon(
             else xr.DataArray(depths_arr, dims="points")
         )
 
-    result = da.interp(**interp_coords, method=method).to_pandas()
+    result = da.interp(**interp_coords, method=method)
 
-    if np.isnan(result).any():
+    if result.isnull().any():
         warnings.warn(f"NaN values found in sampled mantle data ({da.name}). Check that all points are within the dataset bounds.")
 
     return result
@@ -338,8 +379,8 @@ def sample_mantle_var(
     times: ArrayLike = None,
     depths: ArrayLike = None,
     method: str = "linear",
-) -> pd.Series | pd.DataFrame:
-    """Interpolate with point-wise depth (never depth-broadcasted)."""
+) -> pd.DataFrame:
+    """Sample/interpolate mantle data at fixed (time, depth, lat, lon) coordinates."""
     # Check if available coordinates match those of the data array; if not, raise an error
     coord_map = {"lon": lons, "lat": lats, "time": times, "depth": depths}
     for coord in da.dims:
@@ -348,7 +389,7 @@ def sample_mantle_var(
                 f"Data array '{da.name}' has dimension '{coord}' but no corresponding coordinates were provided."
             )
     
-    return _do_interp_cyclic_lon(
+    result = pd.DataFrame(_do_interp_cyclic_lon(
         da=da,
         lons=lons,
         lats=lats,
@@ -356,7 +397,11 @@ def sample_mantle_var(
         depths=depths,
         broadcast_depth=False,
         method=method,
-    )
+    ).to_pandas())
+    
+    result.columns = [f"{da.name.lower()} ({da.attrs.get("units", "unitless")})"]
+    
+    return result
 
 
 def sample_mantle_var_depths(
@@ -366,8 +411,8 @@ def sample_mantle_var_depths(
     times: ArrayLike = None,
     depths: ArrayLike = None,
     method: str = "linear",
-) -> pd.Series | pd.DataFrame:
-    """Interpolate with depth as an orthogonal axis (always broadcasted)."""
+) -> pd.DataFrame:
+    """Sample/interpolate mantle data at (time, lat, lon) coordinates, broadcasting depth."""
     # Check if available coordinates match those of the data array; if not, raise an error
     coord_map = {"lon": lons, "lat": lats, "time": times, "depth": depths}
     for coord in da.dims:
@@ -376,7 +421,7 @@ def sample_mantle_var_depths(
                 f"Data array '{da.name}' has dimension '{coord}' but no corresponding coordinates were provided."
             )
     
-    return _do_interp_cyclic_lon(
+    result = pd.DataFrame(_do_interp_cyclic_lon(
         da=da,
         lons=lons,
         lats=lats,
@@ -384,34 +429,99 @@ def sample_mantle_var_depths(
         depths=depths,
         broadcast_depth=True,
         method=method,
-    )
+    ).to_pandas())
+    
+    result.columns = [
+        f"{da.name.lower()}_{depth:.0f}km ({da.attrs.get('units', 'unitless')})"
+        for depth in depths
+    ]
+    
+    return result
 
 
-def _sample_LAB_depths(
+def sample_LAB_depths(
     ds: xr.Dataset,
     da: xr.DataArray,
     times: ArrayLike=None,
     lats: ArrayLike=None,
     lons: ArrayLike=None,
     offset_km: float=0.0,
-) -> np.ndarray:
-    """Sample mantle variable at the depth of the lithosphere-asthenosphere boundary."""
+) -> pd.DataFrame:
+    """
+    Sample mantle variable at the depth of the lithosphere-asthenosphere boundary.
     
-    coord_list = {k: v for k, v in {"times": times, "lats": lats, "lons": lons}.items() if v is not None}
+    `offset_km` allows sampling at a fixed depth below the LAB (positive) or above it (negative).
+    """
+
+    coords = {
+        "lons": lons,
+        "lats": lats,
+        "times": times,
+    }
     
-    lab_depths = sample_mantle_var(
+    lab_depths = np.asarray(sample_mantle_var(
         da=variables.get("LAB_Depth", ds),
-        **coord_list,
+        **coords,
         method="linear",
-    )
+    )).flatten()  # Flatten to 1D array to use as depth coordinate
     
-    return sample_mantle_var(
+    result = sample_mantle_var(
         da=da,
-        **coord_list,
+        **coords,
         depths=lab_depths + offset_km,
         method="nearest",
     )
+    
+    result.columns = [
+        f"{da.name.lower()}_LAB_{offset_km:+.0f}km ({da.attrs.get('units', 'unitless')})"
+        if offset_km != 0 else
+        f"{da.name.lower()}_LAB ({da.attrs.get('units', 'unitless')})"
+        ]
+    
+    return result
 
 
-def calculate_lambdas(da: xr.DataArray, n_lambdas: int=5) -> pd.DataFrame:
-    pass
+def calculate_lambdas(
+    da: xr.DataArray,
+    times: ArrayLike=None,
+    lats: ArrayLike=None,
+    lons: ArrayLike=None,
+    depth_range: tuple[float, float] | None = None,
+    n_lambdas: int=5,
+) -> pd.DataFrame:
+    """Calculate the first `n_lambdas` polynomial regression coefficients for the given data and depth range."""
+    
+    if "depth" not in da.dims:
+        raise ValueError(f"Data array '{da.name}' has no 'depth' dimension, cannot calculate lambdas.")
+    
+    d_min, d_max = depth_range or (float(da.depth.min()), float(da.depth.max()))
+    
+    # Select depth range for polynomial fitting using explicit bounds (works with descending coordinates)
+    depths = np.asarray(da.sel(depth=(da.depth >= d_min) & (da.depth <= d_max)).depth.values, dtype=float)
+    
+    if depths.size == 0:
+        raise ValueError(
+            f"No depths found in range [{d_min}, {d_max}] km. "
+            f"Dataset depth range: [{float(da.depth.min()):.1f}, {float(da.depth.max()):.1f}] km"
+        )
+    
+    # Sample with broadcast_depth=True to get (n_points, n_depths) matrix
+    sampled = _do_interp_cyclic_lon(
+        da=da,
+        times=times,
+        lats=lats,
+        lons=lons,
+        depths=depths,
+        broadcast_depth=True,
+        method="linear",
+    )  # shape (n_points, n_depths)
+    
+    depth_profiles = sampled.to_numpy().T  # shape (n_depths, n_points)
+    
+    # Fit a polynomial of degree n_lambdas-1 to each depth profile and return the coefficients as features
+    lambda_coeffs = np.polyfit(depths, depth_profiles, deg=n_lambdas-1) # shape (n_lambdas, n_points)
+    
+    lambda_cols = [f"{da.name.lower()}_lambda_{i} ({da.attrs.get('units', 'unitless')})" for i in reversed(range(n_lambdas))]
+    result = pd.DataFrame(lambda_coeffs.T, columns=lambda_cols)  # shape (n_points, n_lambdas)
+
+    return result
