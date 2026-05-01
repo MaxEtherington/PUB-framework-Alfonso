@@ -3,12 +3,13 @@ output grids and join to point data.
 """
 from dataclasses import dataclass
 from typing import Callable, Any
+import warnings
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 import pint_xarray # noqa: F401
-import warnings
+from scipy.interpolate import RegularGridInterpolator
 
 from numpy.typing import ArrayLike
 
@@ -233,7 +234,7 @@ def _average_over_depth(
     return da.rename(f"{var_name}_avg_{int(d0)}-{int(d1)}km")
 
 
-@variables.register_transform("average_over_rolling_time") #TODO
+@variables.register_transform("average_over_rolling_time")
 def _average_over_rolling_time(
     ds: xr.Dataset,
     var_name: str,
@@ -341,35 +342,60 @@ def _do_interp_cyclic_lon(
     method: str = "linear",
 ) -> xr.DataArray:
     """
-    Interpolate with cyclic longitude; depth is broadcast (treated as orthogonal) when requested.
-    
-    If `depths` is `None`, return the full depth profile at each (time, lat, lon) point.
+    Interpolate with antimeridian longitude seam wrapping; depth is broadcast
+    (treated as orthogonal) when requested. Uses RegularGridInterpolator for
+    joint ND interpolation, avoiding the sequential-axis artefacts of DA.interp.
     """
     if lons is not None:
         lons = _match_longitude_convention(da=da, lons=lons)
         da = _wrap_longitude_seam(da)
 
-    interp_coords = {}
-    if "lon" in da.dims:
-        interp_coords["lon"] = xr.DataArray(np.asarray(lons, dtype=float), dims="points")
-    if "lat" in da.dims:
-        interp_coords["lat"] = xr.DataArray(np.asarray(lats, dtype=float), dims="points")
-    if "time" in da.dims:
-        interp_coords["time"] = xr.DataArray(np.asarray(times, dtype=float), dims="points")
-    if "depth" in da.dims:
-        depths_arr = np.asarray(depths, dtype=float)
-        interp_coords["depth"] = (
-            xr.DataArray(depths_arr, dims="depth")
-            if broadcast_depth
-            else xr.DataArray(depths_arr, dims="points")
+    # Active dims in da's own axis order — drives both RGI grid and query columns
+    active_dims = [d for d in da.dims if d in {"lon", "lat", "time", "depth"}]
+
+    rgi = RegularGridInterpolator(
+        points=tuple(da[d].values.astype(float) for d in active_dims),
+        values=da.values,
+        method=method,
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+
+    # Numeric query arrays, keyed by dim name
+    point_coords: dict[str, np.ndarray] = {}
+    if "lon"   in active_dims: point_coords["lon"]   = np.asarray(lons,   dtype=float)
+    if "lat"   in active_dims: point_coords["lat"]   = np.asarray(lats,   dtype=float)
+    if "time"  in active_dims: point_coords["time"]  = np.asarray(times,  dtype=float)
+    if "depth" in active_dims: point_coords["depth"] = np.asarray(depths, dtype=float)
+
+    if broadcast_depth and "depth" in active_dims:
+        # Cartesian product: repeat each point coord n_depths times,
+        # tile depth array n_points times → shape (n_points * n_depths, n_dims)
+        n_points = len(next(v for k, v in point_coords.items() if k != "depth"))
+        n_depths = len(point_coords["depth"])
+        query = np.column_stack([
+            np.tile(point_coords[d], n_points) if d == "depth"
+            else np.repeat(point_coords[d], n_depths)
+            for d in active_dims
+        ])
+        values = rgi(query).reshape(n_points, n_depths)
+        result = xr.DataArray(
+            values,
+            dims=("points", "depth"),
+            coords={"depth": da["depth"].values},
+        )
+    else:
+        query = np.column_stack([point_coords[d] for d in active_dims])
+        values = rgi(query)
+        result = xr.DataArray(values, dims="points")
+
+    if np.any(np.isnan(values)):
+        warnings.warn(
+            f"NaN values found in sampled mantle data ({da.name}). "
+            "Check that all points are within the dataset bounds."
         )
 
-    result = da.interp(**interp_coords, method=method)
-
-    if result.isnull().any():
-        warnings.warn(f"NaN values found in sampled mantle data ({da.name}). Check that all points are within the dataset bounds.")
-
-    return result
+    return result.rename(da.name)
 
 
 def sample_mantle_var(
@@ -409,7 +435,7 @@ def sample_mantle_var_depths(
     lons: ArrayLike = None,
     lats: ArrayLike = None,
     times: ArrayLike = None,
-    depths: ArrayLike = None,
+    depths: ArrayLike = DEFAULT_DEPTHS,
     method: str = "linear",
 ) -> pd.DataFrame:
     """Sample/interpolate mantle data at (time, lat, lon) coordinates, broadcasting depth."""
@@ -431,6 +457,8 @@ def sample_mantle_var_depths(
         method=method,
     ).to_pandas())
     
+    if "depth" not in da.dims:
+        raise ValueError(f"Data array '{da.name}' has no 'depth' dimension, cannot sample over depths.")
     result.columns = [
         f"{da.name.lower()}_{depth:.0f}km ({da.attrs.get('units', 'unitless')})"
         for depth in depths
