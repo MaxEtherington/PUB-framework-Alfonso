@@ -57,6 +57,12 @@ class GridFeatureRegistry:
         return self._point_data
     @point_data.setter
     def point_data(self, df: pd.DataFrame):
+        if not all(col in df.columns for col in ["lon", "lat", "age (Ma)", "present_lon", "present_lat"]):
+            raise ValueError("point_data must contain columns: 'lon', 'lat', 'age (Ma)', 'present_lon', 'present_lat'")
+        if self._point_data is not None:
+            if not df.equals(self._point_data):
+                warnings.warn("Overwriting existing point_data with new DataFrame. Resetting cached results.", stacklevel=2)
+                self._results = None
         self._point_data = df
 
     @property
@@ -85,7 +91,10 @@ class GridFeatureRegistry:
 
     @property
     def mantle_dataset(self) -> xr.Dataset:
-        if self._mantle_dataset is None:
+        if (self._mantle_dataset is None 
+            or hash(getattr(self, "_mantle_data_dir", None).resolve()) 
+            != getattr(self, "_mantle_data_dir_hash", None)
+        ):
             if self.mantle_data_dir is None:
                 raise RuntimeError("mantle_data_dir has not been set on the feature registry.")
             self._mantle_dataset = xr.open_mfdataset(
@@ -94,6 +103,7 @@ class GridFeatureRegistry:
                 concat_dim='time',
                 chunks={"time": 1, "depth": 25},
             )
+            self._mantle_data_dir_hash = hash(self.mantle_data_dir.resolve())
         return self._mantle_dataset
     
     # ── Registration ──────────────────────────────────────────────────────────
@@ -467,14 +477,16 @@ def _base_mantle_features(
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
-        result = sample_mantle_var_depths(
-            da=da,
-            lons=lons,
-            lats=lats,
-            times=times,
-            depths=depths_to_sample,
-            method="linear",
-        )
+        kwargs = {
+            "da": da,
+            "lons": lons,
+            "lats": lats,
+            "times": times,
+            "depths": depths_to_sample,
+            "method": "linear",
+        }
+            
+        result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
 
         if isinstance(result, pd.DataFrame):
             # Rename actual DataFrame columns
@@ -616,7 +628,7 @@ def _temperature_lambdas(
     """Calculate the first `n_lambdas` polynomial regression coefficients of the mantle geotherm."""
     
     result = calculate_lambdas(
-        da=features.mantle_dataset.get("Temperature_Deviation"),  # TODO: Remove _CG once mantle data has been reprocessed
+        da=variables.get("Temperature_Deviation_CG", features.mantle_dataset),
         times=times,
         lats=lats,
         lons=lons,

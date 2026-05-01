@@ -351,7 +351,7 @@ def _do_interp_cyclic_lon(
         da = _wrap_longitude_seam(da)
 
     # Active dims in da's own axis order — drives both RGI grid and query columns
-    active_dims = [d for d in da.dims if d in {"lon", "lat", "time", "depth"}]
+    active_dims = [d for d in da.dims if d in {"lon", "lat", "depth", "time"}]
 
     rgi = RegularGridInterpolator(
         points=tuple(da[d].values.astype(float) for d in active_dims),
