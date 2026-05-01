@@ -8,7 +8,7 @@ all_notebooks:
     plate_model_name: zahirovic2022
   timespan:
     min: 0
-    max: 400
+    max: 350
 
   use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
   
@@ -25,11 +25,11 @@ all_notebooks:
       enabled: false
     mantle:                           # e.g. temperature, flow velocity
       enabled: true
-      data_dir: zahirovic2022
+      data_dir: zahirovic2022_cratonfix
     erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
       enabled: false
 
-  n_jobs: 14
+  n_jobs: 8
   verbose: true
   random_seed: 1234
   overwrite_output: false
@@ -58,7 +58,7 @@ notebook_00c:
   timespan:
   regions_filename:
   overwrite_output: false
-  grid_resolution: 0.5
+  grid_resolution: 1.0
 
 notebook_00d:
   n_jobs:
@@ -76,7 +76,7 @@ notebook_01:
   overwrite_output:
   use_same_features: true
   automatic_feature_selection: false
-  create_svm: true
+  create_svm: false
   create_regional_models: true
 
 notebook_02:
