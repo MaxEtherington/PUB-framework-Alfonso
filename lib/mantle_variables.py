@@ -382,7 +382,7 @@ def _do_interp_cyclic_lon(
         result = xr.DataArray(
             values,
             dims=("points", "depth"),
-            coords={"depth": da["depth"].values},
+            coords={"depth": point_coords["depth"]},
         )
     else:
         query = np.column_stack([point_coords[d] for d in active_dims])

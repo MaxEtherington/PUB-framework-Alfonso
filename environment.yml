@@ -26,7 +26,7 @@ dependencies:
   - py-xgboost=3.2.0
   - pygplates=1.0.0
   - pykdtree=1.4.3
-  - pyrolite=0.3.6
+  # - pyrolite=0.3.6  # grep couldn't seem to find any reference in ./lib/, but it's in the requirements.txt, so maybe we need it for some reason? --- IGNORE ---
   - pyyaml=6.0.3
   - rasterio=1.5.0
   - requests=2.32.5
@@ -39,10 +39,10 @@ dependencies:
   - shapely=2.1.2
   - tqdm=4.67.3
   - xarray=2025.11.0
-  - pint-xarray-0.6.1
+  - pint-xarray=0.6.1
   - pip:
       - gplately==2.0.0
       - platetectonictools==0.4.1
-      - pulearn==0.1.1
       - six==1.16.0
       - slabdip==4.2.2
+      - git+https://github.com/pulearn/pulearn.git@master  # contains recent features for balanced bootstrapping

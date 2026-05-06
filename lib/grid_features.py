@@ -92,8 +92,9 @@ class GridFeatureRegistry:
     @property
     def mantle_dataset(self) -> xr.Dataset:
         if (self._mantle_dataset is None 
-            or hash(getattr(self, "_mantle_data_dir", None).resolve()) 
+            or hash(getattr(self, "_mantle_data_dir", None)) 
             != getattr(self, "_mantle_data_dir_hash", None)
+            is not None
         ):
             if self.mantle_data_dir is None:
                 raise RuntimeError("mantle_data_dir has not been set on the feature registry.")
@@ -438,7 +439,6 @@ def present_day(
 # Feature definitions
 # ==================
 
-
 @features.register_batch(declares="Base_Mantle_Features", coords=snap_to_mantle, probe=False)
 def _base_mantle_features(
     lons: np.ndarray,
@@ -446,34 +446,34 @@ def _base_mantle_features(
     times: np.ndarray,
 ) -> pd.DataFrame:
     """Sample a suite of basic mantle features at requested coordinates."""
-    vars_to_exclude = {
-        'FullTemperature_CG',
-        # 'Pressure',
-        # 'Radial_Velocity',
-        'Temperature_CG',
-        # 'Temperature_Deviation_CG',
-        'Velocity_x',
-        'Velocity_y',
-        'Velocity_z',
-        # 'Viscosity_CG',
-        'East_Velocity',
-        'North_Velocity',
-        'Cell_Volume',
-        # 'Speed',
-        # 'Tangential_Speed',
-        # 'Radial_Tangential_Ratio',
-        # 'LAB_Depth',
-        'Slab_Depth',
-        # 'Temperature_Deviation_avg_0-400km',
-        # 'Temperature_Deviation_avg_0-400km_rolling_30Ma',
-        # 'Temperature_Deviation_avg_0-400km_rolling_50Ma',
-        # 'Temperature_Deviation_avg_100-400km',
-        # 'Temperature_Deviation_avg_100-400km_rolling_30Ma',
-        # 'Temperature_Deviation_avg_100-400km_rolling_50Ma'
-    }
-    vars_to_sample = [v for v in variables.available if v not in vars_to_exclude]
     depths_to_sample = [100, 200, 300, 400]
     results = []
+
+    vars_to_sample = {
+        # 'FullTemperature_CG',
+        'Pressure',
+        'Radial_Velocity',
+        # 'Temperature_CG',
+        'Temperature_Deviation_CG',
+        # 'Velocity_x',
+        # 'Velocity_y',
+        # 'Velocity_z',
+        'Viscosity_CG',
+        # 'East_Velocity',
+        # 'North_Velocity',
+        # 'Cell_Volume',
+        'Speed',
+        'Tangential_Speed',
+        'Radial_Tangential_Ratio',
+        'LAB_Depth',
+        # 'Slab_Depth',
+        'Temperature_Deviation_avg_0-400km',
+        'Temperature_Deviation_avg_0-400km_rolling_30Ma',
+        'Temperature_Deviation_avg_0-400km_rolling_50Ma',
+        'Temperature_Deviation_avg_100-400km',
+        'Temperature_Deviation_avg_100-400km_rolling_30Ma',
+        'Temperature_Deviation_avg_100-400km_rolling_50Ma'
+    }
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
@@ -488,12 +488,79 @@ def _base_mantle_features(
             
         result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
 
-        if isinstance(result, pd.DataFrame):
+        result = result.copy()
+        # Rename columns to include variable name and depth if applicable
+        if len(result.columns) == len(depths_to_sample):  # Sampled across depths
             # Rename actual DataFrame columns
-            result = result.copy()
             result.columns = [f"{var}_{int(d)}km" for d in depths_to_sample]
+        elif len(result.columns) == 1:  # Single depth or depth-independent
+            result.columns = [var]
         else:
-            result = result.rename(var)
+            raise ValueError(f"Unexpected number of columns in result for variable '{var}': {len(result.columns)}")
+
+        results.append(result)
+
+    return pd.concat(results, axis=1)
+
+
+@features.register_batch(declares="LAB_Base_Mantle_Features", coords=snap_to_mantle, probe=False)
+def _LAB_base_mantle_features(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    times: np.ndarray,
+) -> pd.DataFrame:
+    """Sample a suite of basic mantle features at requested coordinates."""
+    offsets_to_sample = [0, 40, 80, 120]
+    results = []
+
+    vars_to_sample = {
+        # 'FullTemperature_CG',
+        'Pressure',
+        'Radial_Velocity',
+        # 'Temperature_CG',
+        'Temperature_Deviation_CG',
+        # 'Velocity_x',
+        # 'Velocity_y',
+        # 'Velocity_z',
+        'Viscosity_CG',
+        # 'East_Velocity',
+        # 'North_Velocity',
+        # 'Cell_Volume',
+        'Speed',
+        'Tangential_Speed',
+        'Radial_Tangential_Ratio',
+        # 'LAB_Depth',
+        # 'Slab_Depth',
+        # 'Temperature_Deviation_avg_0-400km',
+        # 'Temperature_Deviation_avg_0-400km_rolling_30Ma',
+        # 'Temperature_Deviation_avg_0-400km_rolling_50Ma',
+        # 'Temperature_Deviation_avg_100-400km',
+        # 'Temperature_Deviation_avg_100-400km_rolling_30Ma',
+        # 'Temperature_Deviation_avg_100-400km_rolling_50Ma'
+    }
+
+    for var in vars_to_sample:
+        da = variables.get(var, features.mantle_dataset)
+        new_columns = []
+        for offset in offsets_to_sample:
+            result = sample_LAB_depths(
+                ds=features.mantle_dataset,
+                da=da,
+                lons=lons,
+                lats=lats,
+                times=times,
+                offset_km=offset,
+            )
+            new_columns.append(result)
+        result = pd.concat(new_columns, axis=1)
+        # Rename columns to include variable name and depth if applicable
+        if len(result.columns) == len(offsets_to_sample):  # Sampled across depths
+            # Rename actual DataFrame columns
+            result.columns = [f"{var}_LAB+{int(d)}km" for d in offsets_to_sample]
+        elif len(result.columns) == 1:  # Single depth or depth-independent
+            result.columns = [f"{var}_LAB"]
+        else:
+            raise ValueError(f"Unexpected number of columns in result for variable '{var}': {len(result.columns)}")
 
         results.append(result)
 
