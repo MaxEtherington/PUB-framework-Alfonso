@@ -105,18 +105,101 @@ variables.register_base(*BASE_MANTLE_VARS)
 
 
 # ==================
-# Helper functions
+# Transforms
 # ==================
 
+@variables.register_transform("average_over_depth")
+def _average_over_depth(
+    ds: xr.Dataset,
+    var_name: str,
+    depth_range: tuple[float, float] | None = None,
+) -> xr.DataArray:
+    """Average a variable over a depth range, defaulting to full extent of the mantle."""
+    da = variables.get(var_name, ds)
+    if "depth" not in da.dims:
+        raise ValueError(f"'{var_name}' has no 'depth' dimension.")
 
-def _to_km(depths: ArrayLike) -> np.ndarray:
-    """Convert G-ADOPT nondimensionalised depths to km below surface."""
-    return (_GADOPT_SURFACE_R - np.asarray(depths, dtype=float)) * _MANTLE_THICKNESS
+    depth_range = depth_range or (float(da.depth.min()), float(da.depth.max()))
+    d0, d1 = depth_range
+
+    da = da.sel(depth=(da.depth >= d0) & (da.depth <= d1)).mean(dim="depth")
+    return da.rename(f"{var_name}_avg_{int(d0)}-{int(d1)}km")
 
 
-def _to_nondim(depths_km: ArrayLike) -> np.ndarray:
-    """Convert depths in km below surface to G-ADOPT nondimensionalised depths."""
-    return _GADOPT_SURFACE_R - (np.asarray(depths_km, dtype=float) / _MANTLE_THICKNESS)
+@variables.register_transform("average_over_rolling_time")
+def _average_over_rolling_time(
+    ds: xr.Dataset,
+    var_name: str,
+    window_size: int,
+) -> xr.DataArray:
+    """Calculate a rolling average of a variable over time."""
+    da = variables.get(var_name, ds)
+    if "time" not in da.dims:
+        raise ValueError(f"'{var_name}' has no 'time' dimension.")
+    
+    da.sortby("time", ascending=False)  # Ensure time (Ma) decreases so rolling average looks backward
+    da = da.rolling(time=window_size, center=True, min_periods=1).mean()
+    return da.rename(f"{var_name}_rolling_{window_size}Ma")
+
+
+@variables.register_transform("contour_depth")
+def _calculate_contour_depth(
+    ds: xr.Dataset, 
+    var_name: str, 
+    target_contour: float,
+    first_crossing: bool = True,
+) -> xr.DataArray:
+    # --- Validate ---
+    try:
+        da = variables.get(var_name, ds)
+    except KeyError:
+        da = ds[var_name]
+    assert "depth" in da.dims, "DataArray must have a 'depth' dimension"
+    depth_vals = da.depth.values
+    assert np.all(np.diff(depth_vals) < 0), "Depth must be monotonically decreasing"
+
+    # --- Transpose to canonical order, compute if Dask-backed ---
+    canonical_order = [d for d in ("time", "depth", "lat", "lon") if d in da.dims]
+    extra_dims = [d for d in canonical_order if d != "depth"]
+    da = da.transpose(*canonical_order).compute()
+
+    # --- Move depth to axis 0, flip to shallow→deep, flatten remaining dims ---
+    arr = np.moveaxis(da.values, canonical_order.index("depth"), 0)   # (D, ...)
+    arr = arr[::-1]                                                   # shallow→deep
+    depth_vals = depth_vals[::-1]
+    horiz_shape = arr.shape[1:]                                       # e.g. (T, lat, lon)
+    arr_2d = arr.reshape(arr.shape[0], -1)                            # (D, N)
+
+    # --- Find first sign-change along depth for each column ---
+    diff = arr_2d - target_contour                                    # (D, N)
+    sign_changes = np.diff(np.sign(diff), axis=0) != 0                # (D-1, N)
+    has_crossing = sign_changes.any(axis=0)                           # (N,)
+    if first_crossing:
+        idx = sign_changes.argmax(axis=0)                              # (N,)
+    else:
+        # Flip along depth, find first True (= last in original), map index back
+        idx = (sign_changes.shape[0] - 1) - np.flip(sign_changes, axis=0).argmax(axis=0)
+
+    # --- Linear interpolation to exact crossing depth ---
+    col = np.arange(arr_2d.shape[1])
+    d0, d1 = diff[idx, col], diff[idx + 1, col]
+    z0, z1 = depth_vals[idx], depth_vals[idx + 1]
+
+    depth_crossing = z0 + (-d0) / (d1 - d0) * (z1 - z0)
+    depth_crossing = np.where(has_crossing, depth_crossing, np.nan)  # (N,)
+
+    # --- Reshape back and wrap in DataArray ---
+    coords = {d: da.coords[d] for d in extra_dims if d in da.coords}
+    crossing_label = "first" if first_crossing else "last"
+    return xr.DataArray(
+        depth_crossing.reshape(horiz_shape),
+        dims=extra_dims,
+        coords=coords,
+        attrs={
+            "long_name": f"Depth of {crossing_label} {target_contour} {da.attrs.get('units', '').strip()} contour",
+            "units": "km",
+        },
+    ).rename(f"{da.name}_{target_contour}_contour_depth_{crossing_label}")
 
 
 # ==================
@@ -206,48 +289,24 @@ def _LAB_depth(ds: xr.Dataset) -> xr.DataArray:
     return da.rename("LAB_Depth")
 
 
-@variables.register("Slab_Depth") #TODO
+@variables.register("LAB_Depth_Contour")
+def _lab_depth_contour(ds: xr.Dataset) -> xr.DataArray:
+    da = _calculate_contour_depth(
+        ds=ds,
+        var_name="Lithosphere_Indicator",
+        target_contour=0.5,
+        first_crossing=False, # LAB is defined as the last crossing of the 0.5 contour from shallow to deep. 
+    )
+    # Fallback to first non-boundary depth where no crossing is found, to avoid NaNs in difference calculations.
+    # This is a heuristic choice; the actual LAB depth in these regions may be different.
+    min_permissible_depth = ds.depth.isel(depth=-2).to_numpy()
+    da = da.where(~da.isnull() | da > min_permissible_depth, min_permissible_depth)
+    return da.rename("LAB_Depth_Contour")
+
+
+# @variables.register("Slab_Depth") #TODO
 def _slab_depth(ds: xr.Dataset) -> xr.DataArray:
     pass
-
-
-
-# ==================
-# Transforms
-# ==================
-
-@variables.register_transform("average_over_depth") #TODO
-def _average_over_depth(
-    ds: xr.Dataset,
-    var_name: str,
-    depth_range: tuple[float, float] | None = None,
-) -> xr.DataArray:
-    """Average a variable over a depth range, defaulting to full extent of the mantle."""
-    da = variables.get(var_name, ds)
-    if "depth" not in da.dims:
-        raise ValueError(f"'{var_name}' has no 'depth' dimension.")
-
-    depth_range = depth_range or (float(da.depth.min()), float(da.depth.max()))
-    d0, d1 = depth_range
-
-    da = da.sel(depth=(da.depth >= d0) & (da.depth <= d1)).mean(dim="depth")
-    return da.rename(f"{var_name}_avg_{int(d0)}-{int(d1)}km")
-
-
-@variables.register_transform("average_over_rolling_time")
-def _average_over_rolling_time(
-    ds: xr.Dataset,
-    var_name: str,
-    window_size: int,
-) -> xr.DataArray:
-    """Calculate a rolling average of a variable over time."""
-    da = variables.get(var_name, ds)
-    if "time" not in da.dims:
-        raise ValueError(f"'{var_name}' has no 'time' dimension.")
-    
-    da.sortby("time", ascending=False)  # Ensure time (Ma) decreases so rolling average looks backward
-    da = da.rolling(time=window_size, center=True, min_periods=1).mean()
-    return da.rename(f"{var_name}_rolling_{window_size}Ma")
 
 
 # ==================
@@ -255,21 +314,23 @@ def _average_over_rolling_time(
 # ==================
 
 for t, b in [(0, 400), (100, 400)]:
-    av_name = f"Temperature_Deviation_avg_{t}-{b}km"
-    variables.register_derived(
-        name=av_name,
-        transform="average_over_depth",
-        var_name="Temperature_Deviation_CG",
-        depth_range=(t, b),
-    )
-    for window in [30, 50]:
-        variables.register_derived(
-            name=f"{av_name}_rolling_{window}Ma",
-            transform="average_over_rolling_time",
-            var_name=av_name,
-            window_size=window,
+    av_name = f"Temperature_Deviation_Avg_{t}-{b}km"
+    @variables.register(av_name)
+    def _(ds: xr.Dataset) -> xr.DataArray:
+        return _average_over_depth(
+            ds=ds,
+            var_name="Temperature_Deviation_CG",
+            depth_range=(t, b),
         )
 
+    for window in [30, 50]:
+        @variables.register(f"{av_name}_rolling_{window}Ma")
+        def _(ds: xr.Dataset) -> xr.DataArray:
+             return _average_over_rolling_time(
+                ds=ds,
+                var_name=av_name,
+                window_size=window,
+            )
 
 # ==================
 # Sampling utilities
@@ -344,7 +405,7 @@ def _do_interp_cyclic_lon(
     """
     Interpolate with antimeridian longitude seam wrapping; depth is broadcast
     (treated as orthogonal) when requested. Uses RegularGridInterpolator for
-    joint ND interpolation, avoiding the sequential-axis artefacts of DA.interp.
+    joint ND interpolation, avoiding the sequential-axis artefacts of da.interp.
     """
     if lons is not None:
         lons = _match_longitude_convention(da=da, lons=lons)
