@@ -78,8 +78,8 @@ python run_notebooks.py --config config/notebook_parameters_default.yml --notebo
 - `slab_dip.py` — `SlabDipper` wrapper; adds `slab_dip (degrees)` + `arc_trench_distance (km)`
 - `erodep/` — `_extract_erodep.py`, `_ml.py`, `_visualisation.py`
 - `extract_data/` — `paleobathymetry.py`, `crustal_thickness.py`, `crustal_co2.py`, `lip_reconstruction.py`, `paleotopography/` submodule
-- `grid_features.py` — grid-based feature extraction
-- `mantle_variables.py` — mantle variable handling
+- `grid_features.py` — grid-based feature extraction with custom variable registry
+- `mantle_variables.py` — custom variable registry for mantle features; plotting, coordinate handling, and caching
 
 **Data sources** (`data_source/`):
 - `deposits/` — `deposits.csv`, `deposits-Etherington.csv`, `VMS-deposits.csv`, `IOCG-deposits.csv`, `Porphyry-deposits.csv`, `SedCu-deposits.csv`
@@ -122,7 +122,7 @@ grep -q "caliber" .git/hooks/pre-commit 2>/dev/null && echo "hook-active" || ech
 - If **hook-active**: the hook handles sync automatically — just commit normally. Tell the user: "Caliber will sync your agent configs automatically via the pre-commit hook."
 - If **no-hook**: run Caliber manually before committing:
   1. Tell the user: "Caliber: Syncing agent configs with your latest changes..."
-  2. Run: `caliber refresh && git add CALIBER_LEARNINGS.md CLAUDE.md .claude/ .cursor/ .cursorrules .github/copilot-instructions.md .github/instructions/ 2>/dev/null`
+  2. Run: `caliber refresh && git add CALIBER_LEARNINGS.md CLAUDE.md .claude/ 2>/dev/null`
   3. After it completes, briefly tell the user what Caliber updated. Then proceed with the commit.
 
 **Valid `caliber refresh` options:** `--quiet` (suppress output) and `--dry-run` (preview without writing). Do not pass any other flags — options like `--auto-approve`, `--debug`, or `--force` do not exist and will cause errors.
