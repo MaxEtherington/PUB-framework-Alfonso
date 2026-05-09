@@ -1,18 +1,23 @@
-## M Etherington Honours Thesis Data Mining Scripts
+## M Etherington Honours Project: Mantle-Coupled Porphyry Prospectivity Data Mining Scripts
 
-This repository contains the Python scripts and notebooks required to extract the data, train the models, and produce the figures from "Spatio-temporal copper prospectivity in the American Cordillera predicted by positive-unlabelled machine learning".
+This repository contains the Python scripts and notebooks required to extract the data, train the models, and produce the figures for Max Etherington's Research School of Earth Sciences ANU honours project "Reconstructing the 4-D geodynamic blueprint of copper porphyry formation". It creates a spatiotemporal positive-unlabelled bagging (PUB) classifier for Cu deposit prospectivity mapping. The repository is a heavily modified version of the workflow from Christopher Alfonso's 2024 paper "Spatio-temporal copper prospectivity in the American Cordillera predicted by positive-unlabelled machine learning".
 
-Training data can be extracted from the plate model and other input datasets using the `00b-extract_training_data.ipynb` and `00c-extract_grid_data.ipynb` notebooks.
-The first of these notebooks extracts data for the positive/negative mineral deposit observations in `data_source/deposits/deposits.csv`, to be used for training and testing.
-The second notebook extracts data for a regular grid of points, to be used to create the time-dependent mineral prospectivity maps.
+Training data can be extracted using the `00b-extract_training_data.ipynb` and `00c-extract_grid_data.ipynb` notebooks.
 
-Alternatively, the above process can be skipped by using pre-prepared data downloaded from the Zenodo repository ([zenodo.org/record/14010839](https://zenodo.org/record/14010839)).
-Running the notebooks in sequence, beginning with `01-create_classifiers.ipynb`, will automatically download this data to a directory named `prepared_data`.
+`00b` does the following:
+- Co-registers a deposit database with a plate reconstruction
+- Randomly generates unlabelled points 
+- Extracts features for positively labelled deposit points and randomly generated unlabelled points from the plate model, G-ADOPT mantle flow outputs, and other input datasets
+- Assigns regions to these points using a 'regions' polygon file.
+
+Some features require special grid data that is sourced externally. Notebook `00a-generate_data.ipynb` performs this function. Note that these externally sourced features are unlikely to be compatible with most plate reconstructions. 
+
+The workflow is designed in a modular fashion. The parameters of any classifier training run can be configured using a config file in `/config`. This enables the user to determine which features are extracted by the notebooks, which plate reconstruction to use, which set of mantle outputs to use, as well as other more fine-grained controls for these workflows.
 
 ### To run the notebooks:
 
 1. Create a `conda` environment using the `environment.yml` file: `conda env create --file environment.yml`
-2. Run the following notebooks to download and extract training data from Zenodo/your local device (optional):
+2. Run the following notebooks to download and extract training data from Zenodo/your local device(optional):
     - `00a-generate_data.ipynb`
     - `00b-extract_training_data.ipynb`
     - `00c-extract_grid_data.ipynb`
@@ -25,3 +30,5 @@ Running the notebooks in sequence, beginning with `01-create_classifiers.ipynb`,
     - `06-create_preservation_animations.ipynb`
     - `07-partial_dependence.ipynb`
     - `08-time_series.ipynb`
+
+Notebooks may also be run together in the CLI using the script `run_notebooks.py`.
