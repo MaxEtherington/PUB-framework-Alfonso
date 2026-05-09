@@ -45,7 +45,7 @@ Config in `ruff.toml`: Python 3.13, line-length 120. Ignores `E501` (line length
 ## Notebook pipeline sequence
 
 | Notebook | Purpose |
-|----------|--------|
+|----------|---------|
 | `00a` | Generate/download plate model data |
 | `00b` | Extract training data (deposit points) |
 | `00c` | Extract grid data (regular grid for maps) |
@@ -93,7 +93,7 @@ Key parameters:
 - `grid_resolution`: degrees (notebook_00c, default `0.5`)
 - `n_jobs`: parallelism via `joblib`
 
-Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`.
+Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`, `config/zahirovic_baseline.yml`.
 
 ## Architecture
 
@@ -169,7 +169,6 @@ Examples:
 
 Use `/commit` to generate a compliant message. Use `/commit-push-pr` to branch, commit, push, and open a PR.
 
-<!-- caliber:managed:pre-commit -->
 ## Before Committing
 
 **IMPORTANT:** Before every git commit, you MUST ensure Caliber syncs agent configs with the latest code changes.
@@ -190,28 +189,18 @@ grep -q "caliber" .git/hooks/pre-commit 2>/dev/null && echo "hook-active" || ech
 **`caliber config`** takes no flags — it runs an interactive provider setup. Do not pass `--provider`, `--api-key`, or `--endpoint`.
 
 If `caliber` is not found, tell the user: "This project uses Caliber for agent config sync. Run /setup-caliber to get set up."
-<!-- /caliber:managed:pre-commit -->
-
-<!-- caliber:managed:learnings -->
 ## Session Learnings
 
 Read `CALIBER_LEARNINGS.md` for patterns and anti-patterns learned from previous sessions.
 These are auto-extracted from real tool usage — treat them as project-specific rules.
-<!-- /caliber:managed:learnings -->
-
-<!-- caliber:managed:model-config -->
 ## Model Configuration
 
 Recommended default: `claude-sonnet-4-6` with high effort (stronger reasoning; higher cost and latency than smaller models).
 Smaller/faster models trade quality for speed and cost — pick what fits the task.
 Pin your choice (`/model` in Claude Code, or `CALIBER_MODEL` when using Caliber with an API provider) so upstream default changes do not silently change behavior.
 
-<!-- /caliber:managed:model-config -->
-
-<!-- caliber:managed:sync -->
 ## Context Sync
 
 This project uses [Caliber](https://github.com/caliber-ai-org/ai-setup) to keep AI agent configs in sync across Claude Code, Cursor, Copilot, and Codex.
 Configs update automatically before each commit via `caliber refresh`.
 If the pre-commit hook is not set up, run `/setup-caliber` to configure everything automatically.
-<!-- /caliber:managed:sync -->

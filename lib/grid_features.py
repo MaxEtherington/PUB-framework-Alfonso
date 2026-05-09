@@ -19,6 +19,7 @@ from typing import Callable
 from functools import partial
 
 import numpy as np
+from numpy.typing import ArrayLike
 import pandas as pd
 import xarray as xr
 import pint_xarray  # noqa
@@ -36,7 +37,7 @@ from .mantle_variables import variables, sample_mantle_var, sample_mantle_var_de
 class GridFeature:
     """A registered grid feature with a sampler function and metadata."""
     name: str
-    sampler: Callable[[np.ndarray, np.ndarray, np.ndarray], pd.Series | pd.DataFrame]
+    sampler: Callable[[np.ndarray, np.ndarray, np.ndarray], pd.DataFrame]
     coordinate_resolver: Callable | None = None
 
 
@@ -94,9 +95,7 @@ class GridFeatureRegistry:
     @property
     def mantle_dataset(self) -> xr.Dataset:
         if (self._mantle_dataset is None
-            or hash(getattr(self, "_mantle_data_dir", None))
-            != getattr(self, "_mantle_data_dir_hash", None)
-            is not None
+            or hash(self.mantle_data_dir.resolve()) != getattr(self, "_mantle_data_dir_hash", None)
         ):
             if self.mantle_data_dir is None:
                 raise RuntimeError("mantle_data_dir has not been set on the feature registry.")
@@ -107,10 +106,13 @@ class GridFeatureRegistry:
                 chunks={"time": 1, "depth": 25},
             )
             self._mantle_data_dir_hash = hash(self.mantle_data_dir.resolve())
+            self.reset()  # Clear cached results when loading new dataset
         return self._mantle_dataset
 
     # ── Registration ──────────────────────────────────────────────────────────
-
+    # TODO: upgrade registration so that it wraps output functions such that,
+    # when run, they will use self.get() unless the coordinates provided do not match
+    # those previously in the function definition.
     def register(self, name: str, coords: Callable | None = None):
         """Decorator to register a grid feature sampler function."""
         def decorator(fn):
@@ -151,6 +153,12 @@ class GridFeatureRegistry:
                         **feature_properties
                     )
             except Exception as exc:
+                if probe and not isinstance(exc, RuntimeError):
+                    warnings.warn(
+                        f"Probing batch producer '{fn.__name__}' raised {type(exc).__name__}: {exc}. "
+                        "Falling back to declares — check sampler for bugs.",
+                        stacklevel=3,
+                    )
                 if isinstance(declares, list):
                     for name in declares:
                         self._features[str(name)] = GridFeature(
@@ -190,11 +198,20 @@ class GridFeatureRegistry:
             raise KeyError(f"Unknown feature: '{name}'. Available: {list(self._features)}")
         return self._features[name]
 
+    def get_coordinates(self, resolver: Callable) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Get resolved coordinates for a given resolver, using cache if available."""
+        if resolver in self._resolved_coordinates:
+            resolved_coordinates = self._resolved_coordinates[resolver]
+        else:
+            resolved_coordinates = resolver()
+            self._resolved_coordinates[resolver] = resolved_coordinates
+        return resolved_coordinates
+
     def get(
         self,
         name: str,
         *,
-        coords=None,
+        coords: tuple[ArrayLike, ArrayLike, ArrayLike] | None=None,
         coordinate_resolver=None,
     ) -> pd.Series | pd.DataFrame:
         """Get a feature and cache result columns in ``_results``.
@@ -207,19 +224,20 @@ class GridFeatureRegistry:
         override = coords is not None or coordinate_resolver is not None
         feature = self._get_gridfeature(name)
 
+        # Fetch cached result if available
         if not override:
             if self._results is not None and name in self._results.columns:
                 return self._results[name]
 
+        #  Get coordinate resolver for sampling
         if override:
-            resolved_coordinates = coords if coords is not None else coordinate_resolver()
+            if coords is not None:
+                resolved_coordinates = coords
+            else:  # coordinate_resolver is not None
+                resolved_coordinates = coordinate_resolver()
         else:
-            resolver = feature.coordinate_resolver or reconstructed
-            if resolver in self._resolved_coordinates:
-                resolved_coordinates = self._resolved_coordinates[resolver]
-            else:
-                resolved_coordinates = resolver()
-                self._resolved_coordinates[resolver] = resolved_coordinates
+            coordinate_resolver = feature.coordinate_resolver or reconstructed
+            resolved_coordinates = self.get_coordinates(coordinate_resolver)
 
         result = feature.sampler(*resolved_coordinates)
 
@@ -318,27 +336,28 @@ class GridFeatureRegistry:
 
         time_slices = {name: [] for name in feature_names}
 
-        for time in times:
-            self.reset()
-            mask = plate_ages >= time
-            valid_indices = np.nonzero(mask)[0]
+        try:
+            for time in times:
+                self.reset()
+                mask = plate_ages >= time
+                valid_indices = np.nonzero(mask)[0]
 
-            self._point_data = pd.DataFrame({
-                "lon": flat_lons[valid_indices],
-                "lat": flat_lats[valid_indices],
-                "age (Ma)": np.full(len(valid_indices), float(time)),
-                "present_lon": flat_lons[valid_indices],
-                "present_lat": flat_lats[valid_indices],
-            })
+                self._point_data = pd.DataFrame({
+                    "lon": flat_lons[valid_indices],
+                    "lat": flat_lats[valid_indices],
+                    "age (Ma)": np.full(len(valid_indices), float(time)),
+                    "present_lon": flat_lons[valid_indices],
+                    "present_lat": flat_lats[valid_indices],
+                })
 
-            for name in feature_names:
-                result = self.get(name)
-                da = np.full(len(flat_lons), np.nan, dtype=np.float32)
-                da[valid_indices] = result.values
-                time_slices[name].append(da.reshape(len(lats), len(lons)))
-
-        self._point_data = old_point_data
-        self._results = old_results
+                for name in feature_names:
+                    result = self.get(name)
+                    da = np.full(len(flat_lons), np.nan, dtype=np.float32)
+                    da[valid_indices] = result.values
+                    time_slices[name].append(da.reshape(len(lats), len(lons)))
+        finally:
+            self._point_data = old_point_data
+            self._results = old_results
 
         ds = xr.Dataset(
             {
@@ -476,12 +495,51 @@ def present_day(
     return lons, lats, times
 
 
+def _offset_coordinates_by_time(
+    coordinate_resolver: Callable,
+    n_timesteps: int = 1,
+    return_point_indices: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Resolve coordinates by reconstructing points to a different time step.
+    By default, resolves coordinates backwards.
+    To resolve forwards, use a negative time_offset and set n_timesteps to 
+    the number of steps forward to resolve.
+    """
+    present_lons, present_lats = features.point_data[["present_lon", "present_lat"]].values.T
+    _, _, times = coordinate_resolver()
+    valid_times = np.sort(np.unique(times))[::-1] # Sort descending (e.g. 100 Ma, 90 Ma, ..., 10 Ma)
+
+    # Find previous times by snapping current time indices back by n_timesteps
+    previous_time_indices = np.clip(
+        np.digitize(times, valid_times) - n_timesteps,
+        0, len(valid_times) - 1)
+    previous_times = valid_times[previous_time_indices]
+
+    # Use Points to reconstruct points to timestep before birth age
+    points = gpl.Points(
+        features.plate_reconstruction,
+        present_lons, present_lats,
+        0.0,
+    )
+    if return_point_indices:
+        offset_lons, offset_lats, point_indices = points.reconstruct_to_birth_age(
+            previous_times, return_point_indices=True
+        )
+        return offset_lons, offset_lats, previous_times, point_indices
+    else:
+        offset_lons, offset_lats = points.reconstruct_to_birth_age(
+            previous_times, return_point_indices=False
+        )
+        return offset_lons, offset_lats, previous_times
+
+
 # ===========================
 # Batch-register mantle vars
 # ===========================
 
 @features.register_batch(declares="Base_Mantle_Features", coords=snap_to_mantle, probe=False)
-def _base_mantle_features(
+def _base_mantle_features_depths(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
@@ -490,7 +548,7 @@ def _base_mantle_features(
     depths_to_sample = [100, 200, 300, 400]
     results = []
 
-    vars_to_sample = {
+    vars_to_sample = [
         # 'FullTemperature_CG',
         # 'Pressure',
         'Radial_Velocity',
@@ -511,13 +569,28 @@ def _base_mantle_features(
         '1000K_Isotherm_Depth',
         'Sublithospheric_Cold_Anomaly_Thickness',
         'Cold_Anomaly_Magnitude',
-        'Temperature_Deviation_avg_0-400km',
-        'Temperature_Deviation_avg_0-400km_rolling_30Ma',
-        'Temperature_Deviation_avg_0-400km_rolling_50Ma',
-        'Temperature_Deviation_avg_100-400km',
-        'Temperature_Deviation_avg_100-400km_rolling_30Ma',
-        'Temperature_Deviation_avg_100-400km_rolling_50Ma'
-    }
+        'Temperature_Deviation_Avg_0-400km',
+        'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_100-400km',
+        'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_LAB-120km',
+        'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_LAB-160km',
+        'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_LAB-200km',
+        'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_LAB-300km',
+        'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
+        'Temperature_Deviation_Avg_LAB-400km',
+        'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
+        'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma'
+    ]
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
@@ -532,7 +605,6 @@ def _base_mantle_features(
 
         result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
 
-        result = result.copy()
         # Rename columns to include variable name and depth if applicable
         if len(result.columns) == len(depths_to_sample):  # Sampled across depths
             # Rename actual DataFrame columns
@@ -548,7 +620,7 @@ def _base_mantle_features(
 
 
 @features.register_batch(declares="Base_Mantle_Features_LAB", coords=snap_to_mantle, probe=False)
-def _LAB_base_mantle_features(
+def _base_mantle_features_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
@@ -557,7 +629,7 @@ def _LAB_base_mantle_features(
     offsets_to_sample = [0, 40, 80, 120]
     results = []
 
-    vars_to_sample = {
+    vars_to_sample = [
         # 'FullTemperature_CG',
         # 'Pressure',
         'Radial_Velocity',
@@ -577,13 +649,28 @@ def _LAB_base_mantle_features(
         # '1000K_Isotherm_Depth',
         # 'Sublithospheric_Cold_Anomaly_Thickness',
         # 'Cold_Anomaly_Magnitude',
-        # 'Temperature_Deviation_avg_0-400km',
-        # 'Temperature_Deviation_avg_0-400km_rolling_30Ma',
-        # 'Temperature_Deviation_avg_0-400km_rolling_50Ma',
-        # 'Temperature_Deviation_avg_100-400km',
-        # 'Temperature_Deviation_avg_100-400km_rolling_30Ma',
-        # 'Temperature_Deviation_avg_100-400km_rolling_50Ma'
-    }
+        # 'Temperature_Deviation_Avg_0-400km',
+        # 'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_100-400km',
+        # 'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-120km',
+        # 'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-160km',
+        # 'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-200km',
+        # 'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-300km',
+        # 'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-400km',
+        # 'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma'
+    ]
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
@@ -603,6 +690,7 @@ def _LAB_base_mantle_features(
         if len(result.columns) == len(offsets_to_sample):  # Sampled across depths
             # Rename actual DataFrame columns
             result.columns = [f"{var}_LAB+{int(d)}km" for d in offsets_to_sample]
+            # Append overall average column
         elif len(result.columns) == 1:  # Single depth or depth-independent
             result.columns = [f"{var}_LAB"]
         else:
@@ -684,40 +772,6 @@ def _plate_acceleration(
     return pd.DataFrame(acceleration, columns=["plate_acceleration (cm/yr/Myr)"])
 
 
-def _calculate_feature_delta(  # TODO
-    present_lons: np.ndarray,
-    present_lats: np.ndarray,
-    times: np.ndarray,
-
-    feature_name: str,
-) -> pd.DataFrame:
-    """Sample the difference in a feature between two consecutive timesteps at requested coordinates."""
-    valid_times = np.sort(np.unique(times))[::-1] # Sort descending (e.g. 100 Ma, 90 Ma, ..., 10 Ma)
-
-    # Find previous times by snapping current time indices back by one timestep
-    previous_time_indices = np.digitize(times, valid_times) - 1
-    previous_times = np.clip(
-        valid_times[previous_time_indices],
-        valid_times.min(), valid_times.max()
-    )
-
-    # Instaniate Points to reconstruct points to timestep before birth age
-    points = gpl.Points(
-        features.plate_reconstruction,
-        present_lons, present_lats,
-        0.0,
-    )
-
-    feature_prev = features.get().to_numpy()
-    feature = features.get(feature_name).to_numpy()
-
-    delta = feature - feature_prev
-
-    return pd.DataFrame(delta, columns=["some_feature_delta"])
-
-
-
-
 def _relative_tangential_velocity_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
@@ -761,17 +815,6 @@ def _relative_tangential_velocity_LAB(
     )
     return result
 
-# Register relative tangential velocity features at multiple depths below the LAB
-for offset in [0, 40, 80, 120]:
-    features.register_batch(
-        declares=[
-            f"mantle_relative_east_velocity_LAB_{offset}km (cm/yr)",
-            f"mantle_relative_north_velocity_LAB_{offset}km (cm/yr)",
-            f"mantle_relative_speed_LAB_{offset}km (cm/yr)"
-        ],
-        coords=snap_to_mantle
-    )(partial(_relative_tangential_velocity_LAB, offset_km=offset))
-
 
 
 def _calculate_plate_frame_velocity_components(
@@ -809,7 +852,7 @@ def _relative_velocity_in_plate_frame(
         features.get(f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)").to_numpy(),
     ])
 
-    v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components(lons, lats, times)
+    v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components()
 
     relative_parallel = np.vecdot(v_rel, v_hat_parallel, axis=1)
     relative_transverse = np.vecdot(v_rel, v_hat_transverse, axis=1)
@@ -820,21 +863,9 @@ def _relative_velocity_in_plate_frame(
         columns=[
             f"relative_velocity_parallel_to_plate_LAB_{offset_km}km (cm/yr)",
             f"relative_velocity_transverse_to_plate_LAB_{offset_km}km (cm/yr)",
-            f"relative_speed_LAB_{offset_km}km (cm/yr)"
         ]
     )
     return result
-
-# Register plate-relative tangential velocity features at multiple depths below the LAB
-for offset in [0, 40, 80, 120]:
-    features.register_batch(
-        declares=[
-            f"relative_velocity_parallel_to_plate_LAB_{offset}km (cm/yr)",
-            f"relative_velocity_transverse_to_plate_LAB_{offset}km (cm/yr)",
-            f"relative_speed_LAB_{offset}km (cm/yr)"
-        ],
-        coords=snap_to_mantle
-    )(partial(_relative_velocity_in_plate_frame, offset_km=offset))
 
 
 @features.register_batch("Temperature_Deviation_Lambdas", coords=snap_to_mantle)
@@ -857,3 +888,147 @@ def _temperature_lambdas(
     )
 
     return result
+
+# ==================
+# Feature transforms
+# ==================
+
+# Feature transforms accept a feature and registers a new feature based on it.
+
+
+def _feature_LAB_depth_averages(
+    lons,
+    lats,
+    times,
+    sampler: Callable[[np.ndarray, np.ndarray, np.ndarray, float], pd.DataFrame],
+    offset_depths: list[float] = [0, 40, 80, 120],
+) -> pd.DataFrame:
+    """
+    Sample a depth-dependent feature at a series of depth offsets from the LAB, then return the average.
+    """
+    samples = []
+    col_names = None
+    for offset in offset_depths:
+        sample_df = sampler(lons=lons, lats=lats, times=times, offset_km=offset)
+        if col_names is None:
+            col_names = sample_df.columns
+        samples.append(sample_df.to_numpy())
+
+    samples = np.stack(samples, axis=0)
+    average = np.nanmean(samples, axis=0)
+
+    result_df = pd.DataFrame(average, columns=col_names)
+    return result_df
+
+
+# ===========================
+# Register derivative features
+# ===========================
+
+
+# LAB offsets
+LAB_offsets = [0, 40, 80, 120, 160]
+for LAB_offset in LAB_offsets:
+    # Register relative tangential velocity features at multiple depths below the LAB
+    features.register_batch(
+        declares=[
+            f"mantle_relative_east_velocity_LAB_{LAB_offset}km (cm/yr)",
+            f"mantle_relative_north_velocity_LAB_{LAB_offset}km (cm/yr)",
+            f"mantle_relative_speed_LAB_{LAB_offset}km (cm/yr)"
+        ],
+        coords=snap_to_mantle
+    )(partial(_relative_tangential_velocity_LAB, offset_km=LAB_offset))
+
+    # Register plate-relative tangential velocity features at multiple depths below the LAB
+    features.register_batch(
+        declares=[
+            f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)",
+            f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)",
+        ],
+        coords=snap_to_mantle
+    )(partial(_relative_velocity_in_plate_frame, offset_km=LAB_offset))
+
+# Register depth averages of mantle-relative velocity components
+features.register_batch(
+    declares=[
+        f"mantle_relative_east_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
+        f"mantle_relative_north_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
+        f"mantle_relative_speed_LAB_{LAB_offset}km_avg (cm/yr)"
+    ], coords=snap_to_mantle
+    )(partial(_feature_LAB_depth_averages, sampler=_relative_tangential_velocity_LAB, offset_depths=LAB_offsets)
+)
+
+features.register_batch(
+    declares=[
+        f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
+        f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
+    ], coords=snap_to_mantle
+    )(partial(
+        _feature_LAB_depth_averages, sampler=_relative_velocity_in_plate_frame,
+        offset_depths=LAB_offsets
+    )
+)
+
+
+
+# Hardcoded because these live in the Base_Mantle_Features placeholder batch and aren't
+# individually resolvable in features.available until the batch sampler is first called.
+base_mantle_features = [
+    'LAB_Depth',
+    '1000K_Isotherm_Depth',
+    'Sublithospheric_Cold_Anomaly_Thickness',
+    'Cold_Anomaly_Magnitude',
+    'Temperature_Deviation_Avg_0-400km',
+    'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_100-400km',
+    'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_LAB-120km',
+    'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_LAB-160km',
+    'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_LAB-200km',
+    'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_LAB-300km',
+    'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
+    'Temperature_Deviation_Avg_LAB-400km',
+    'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
+    'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma',
+    'Temperature_Deviation_Lambdas',
+]
+
+@features.register_batch(
+    declares=[f"{fn.replace(' ', '_')}_delta" for fn in base_mantle_features if fn != 'Temperature_Deviation_Lambdas'],
+    coords=snap_to_mantle,
+    probe=False,
+)
+def _mantle_variable_deltas(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
+    offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
+    current = _base_mantle_features_depths(lons, lats, times)
+    previous = _base_mantle_features_depths(offset_lons, offset_lats, offset_times)
+    return pd.DataFrame({
+        f"{fn.replace(' ', '_')}_delta": current[fn].values - previous[fn].values
+        for fn in base_mantle_features if fn != 'Temperature_Deviation_Lambdas'
+    })
+
+
+@features.register_batch(
+    declares="Temperature_Deviation_Lambdas_delta",
+    coords=snap_to_mantle,
+    probe=False,
+)
+def _temperature_lambdas_delta(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
+    offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
+    current = _temperature_lambdas(lons, lats, times)
+    previous = _temperature_lambdas(offset_lons, offset_lats, offset_times)
+    delta_df = current.subtract(previous.values)
+    delta_df.columns = [f"{col.replace(' ', '_')}_delta" for col in current.columns]
+    return delta_df
+
+
+
