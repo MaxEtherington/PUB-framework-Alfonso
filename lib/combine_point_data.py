@@ -38,6 +38,7 @@ def combine_point_data(
     output_filename: Optional[_PathLike] = None,
     min_time: float = -np.inf,
     max_time: float = np.inf,
+    clip_to_study_polygons: bool = True,
     n_jobs: int = 1,
     verbose: bool = False,
 ) -> pd.DataFrame:
@@ -85,6 +86,7 @@ def combine_point_data(
         study_area_dir=study_area_dir,
         min_time=min_time,
         max_time=max_time,
+        clip_to_study_polygons=clip_to_study_polygons,
         n_jobs=n_jobs,
         verbose=verbose,
     )
@@ -130,6 +132,7 @@ def _prepare_deposit_data(
     study_area_dir,
     min_time=-np.inf,
     max_time=np.inf,
+    clip_to_study_polygons=True,
     n_jobs=1,
     verbose=False,
 ):
@@ -157,12 +160,13 @@ def _prepare_deposit_data(
         deposit_data=deposit_data,
         plate_reconstruction=plate_reconstruction,
     )
-    deposit_data = _clean_deposit_data(
-        deposit_data=deposit_data,
-        polygons_dir=study_area_dir,
-        nprocs=n_jobs,
-        verbose=verbose,
-    )
+    if clip_to_study_polygons:  # Removing deposits outside study polygons seems cherry-picky
+        deposit_data = _clean_deposit_data(
+            deposit_data=deposit_data,
+            polygons_dir=study_area_dir,
+            nprocs=n_jobs,
+            verbose=verbose,
+        )
     deposit_data = _get_overriding_plate_ids(
         data=deposit_data,
         plate_reconstruction=plate_reconstruction,

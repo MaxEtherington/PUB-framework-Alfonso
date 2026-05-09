@@ -1,0 +1,31 @@
+# thesis.mplstyle
+
+# Font
+font.family        : sans-serif
+font.sans-serif    : Fira Sans, DejaVu Sans
+font.size          : 9
+font.weight        : normal
+
+# Text sizes
+axes.labelsize     : 9
+axes.labelweight   : normal
+axes.titlesize     : 10
+axes.titleweight   : medium
+xtick.labelsize    : 8
+ytick.labelsize    : 8
+
+# DPI
+figure.dpi         : 150
+savefig.dpi        : 300
+savefig.bbox       : tight
+savefig.pad_inches : 0.05
+
+# Axes
+axes.linewidth     : 0.8
+xtick.major.width  : 0.8
+ytick.major.width  : 0.8
+xtick.minor.width  : 0.5
+ytick.minor.width  : 0.5
+
+# Lines
+lines.linewidth    : 1.2

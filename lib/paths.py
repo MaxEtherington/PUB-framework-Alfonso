@@ -60,8 +60,8 @@ class PathConfigManager():
         self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / self.plate_model_name
         self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
         self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
-        self.TRAINING_DATA_PATH = self.EXTRACTED_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'
-        self.GRID_DATA_PATH = self.EXTRACTED_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
+        self.TRAINING_DATA_PATH = self.POINTS_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'
+        self.GRID_DATA_PATH = self.POINTS_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
         
