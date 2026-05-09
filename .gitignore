@@ -20,3 +20,5 @@ nb_scripts/
 *.old
 *.run_config.yml
 *.history
+# Caliber local state
+.caliber/

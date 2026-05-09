@@ -1,68 +1,121 @@
-# Copilot Instructions — 4D PUB Classifier Project
+# PUB Framework — Copper Prospectivity ML Pipeline
 
-## Agent Purpose
-You are an expert geoscience data scientist implementing a multi-stage ML pipeline for mineral deposit prospectivity mapping. This project extends Alfonso et al.'s (2024) spatiotemporal Positive-Unlabelled Bagging (PUB) classifier by integrating mantle dynamic features from G-ADOPT geodynamic model outputs. Write clean, modular, well-documented code that is fully reproducible under different plate reconstructions.
+Honours thesis pipeline predicting spatio-temporal copper deposit prospectivity using positive-unlabelled (PU) machine learning and plate tectonic reconstructions.
 
-## Behavioural Guidelines
-- **MCPR:** Adhere to Modularity, Clarity, Performance, and Reproducibility in all code. Prioritise clarity and reproducibility over performance unless there is a clear bottleneck.
-- **Config-driven:** All file paths, parameters, and reconstruction-specific settings must come from the config system. Do not hardcode any value that could vary between runs.
-- **MCP tools:** Before actioning any task, check your available MCP tools and use the best tool for the job (e.g. use the Jupyter MCP to interact with notebooks — do not edit `.ipynb` JSON directly).
-- **GitHub Issues:** The issue tracker is the single source of truth for task status. Check the relevant issue before starting any task; read the full issue body and comments, as they contain prerequisites and detail beyond the title. Reference issues in commits via `Fixes #N`.
-- **No broken files:** Leave every file in a syntactically valid, importable state. Guard incomplete implementations with `raise NotImplementedError` and a comment explaining what remains.
+## Environment
 
-> ⚠️ **Phase gate:** Do not begin any M3/M4 issue until issue [#20](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/20) is closed.
+```bash
+conda env create --file environment.yml  # env name: prospectivity
+conda activate prospectivity
+```
 
----
+## Pipeline Execution
 
-## Workspace Layout
+```bash
+# Run notebooks with a config (preferred over raw Jupyter)
+python run_notebooks.py --config config/mantle_test.yml --notebooks 00b 00c 01
+python run_notebooks.py --config config/zahirovic_baseline.yml --setup
+python run_notebooks.py --config config/notebook_parameters_default.yml --cache-remote
+```
 
-All repos live under:
-`/Users/glados/Documents/Not Useless/Documents/University/2026/Honours/Data & Code/`
+Notebook sequence: `00a` → `00b` → `00c` → `01` → `02` → `03` → `04` → `05` → `06` → `07` → `08`
 
-| Repository | Role |
-|---|---|
-| `PUB-framework-Alfonso/` | **Primary working repo.** All new code goes here. |
-| `PUB-framework-Ehsan/` | Reference: BayesSearchCV, size-class weighting, two-stage PUB→RF, `lib_mpm.py` |
-| `Mather2025-SeafloorAnomalies/` | Reference: seafloor anomaly features, temporal buffer logic |
-| `mantle-processing/` | Reference: G-ADOPT netCDF prototype (known bugs — see `docs/mantle-extraction.md`) |
-| `cu-deposits-preprocessing/` | Deposit DB source; schema in `docs/data-layout.md` |
-| `GPlates data/` | Plate model files for all reconstructions |
+## Architecture
 
----
+**Config**: `config/*.yml` parsed by `lib/load_params.py:get_params()` with 3-level merge · `lib/paths.py:PathConfigManager` exposes all derived paths
 
-## This Repo — Notebooks (run in order)
+**Key modules** (`lib/`):
+- `plate_models.py` — `get_plate_reconstruction()` via `gplately.PlateModelManager`; local fallback
+- `generate_unlabelled_points.py` — uniform sphere sampling, joblib parallel
+- `combine_point_data.py` — merge `data_source/deposits/*.csv` + unlabelled points
+- `calculate_convergence.py` — `ptt.subduction_convergence_over_time` wrapper
+- `coregister_combined_point_data.py` — haversine `NearestNeighbors` join to subduction zones
+- `coregister_crustal_thickness.py` — radius join to `crustal_thickness_{t}Ma.nc` via xarray
+- `cv.py` — region-aware `StratifiedKFold` with roc_auc/f1/balanced_accuracy metrics
+- `pu.py` — `get_xy()`, `CORRELATED_COLUMNS`, `PRESERVATION_COLUMNS` constants
+- `feature_selection.py` — Spearman correlation dendrogram
+- `partial_dependence.py` — `PartialDependenceDisplay` wrappers
+- `check_files.py` — Zenodo download (record/14010839)
+- `assign_regions.py` — spatial join to `data_source/regions/regions.geojson`
+- `misc.py` — `reconstruct_by_topologies()`, `load_data()`, `filter_topological_features()`
+- `erodep/` — `_extract_erodep.py`, `_ml.py`
+- `extract_data/` — `paleobathymetry.py`, `crustal_thickness.py`, `crustal_co2.py`, `paleotopography/`
+- `grid_features.py`, `mantle_variables.py`
 
-| Notebook | Purpose |
-|---|---|
-| `00a-generate_data.ipynb` | Generate input rasters. Skip by downloading from Zenodo 14010839. |
-| `00b-extract_training_data.ipynb` | Extract kinematic + raster features → `training_data_global.csv` |
-| `00c-extract_grid_data.ipynb` | Same extraction on prediction grid → `grid_data.csv` |
-| `00d-extract_mantle_features.ipynb` | Append G-ADOPT mantle features to training and grid data ([#24](https://github.com/MaxEtherington/PUB-framework-Alfonso/issues/24)) |
-| `01-create_classifiers.ipynb` | Train PUB + SVM. Feature selection, cross-validation. |
-| `02-create_probability_maps.ipynb` | Apply classifier → probability netCDF maps. |
-| `03–08` | Animations, erosion, preservation, partial dependence, time series. |
+**Config files** (`config/`):
+- `notebook_parameters_default.yml` — Alfonso2024 model, 0–170 Ma defaults
+- `zahirovic_baseline.yml` — zahirovic2022, 0–400 Ma
+- `mantle_test.yml` — mantle feature test run
+- `thesis.mplstyle` — matplotlib style
 
-**Config system:** All parameters read from `.run_config.yml` via `lib.load_params.get_params()`. Per-run templates in `config/` are copied to `.run_config.yml` by `run_notebooks.py`.
+**Data** (`data_source/`):
+- `deposits/` — `deposits.csv`, `deposits-Etherington.csv`, `VMS-deposits.csv`, `IOCG-deposits.csv`, `Porphyry-deposits.csv`, `SedCu-deposits.csv`
+- `regions/regions.geojson` — region polygons
+- `plate_models/zahirovic2022/` — plate model layers (Rotations, Topologies, StaticPolygons, Coastlines)
 
----
+## Conventions
 
-## Docs & Navigation
+- **Parallelism**: `joblib.Parallel(n_jobs, verbose=int(verbose))` + `delayed()` always
+- **Verbose**: print to `sys.stderr`, never stdout; guard with `if verbose:`
+- **Paths**: always `PathConfigManager` from `lib/paths.py` — never hardcode
+- **Labels**: `"positive"`, `"negative"`, `"unlabelled"` in `"label"` column — exact strings
+- **Coordinates**: `"lon"`, `"lat"`, `"age (Ma)"` — exact column names
+- **Data loading**: `lib/misc.py:load_data()` accepts `str | Path | DataFrame`
+- **Plate models**: `lib/plate_models.py:get_plate_reconstruction()` — PMM + local fallback
+- **Jupytext**: notebooks sync to `nb_scripts/` as `.py:percent` (`jupytext.toml`)
 
-See [`docs/agent-routing.md`](docs/agent-routing.md) for the full task→file routing table.
+<!-- caliber:managed:pre-commit -->
+## Before Committing
 
----
+**IMPORTANT:** Before every git commit, you MUST ensure Caliber syncs agent configs with the latest code changes.
 
-## GitHub Issues
+First, check if the pre-commit hook is already installed:
+```bash
+grep -q "caliber" .git/hooks/pre-commit 2>/dev/null && echo "hook-active" || echo "no-hook"
+```
 
-- Milestones: [M1](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/1) (Phase 0), [M2](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/2) (Phases 1A/1B/2), [M3](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/3) (Phases 3–4), [M4](https://github.com/MaxEtherington/PUB-framework-Alfonso/milestone/4) (Phase 5)
-- Labels: `infrastructure`, `data`, `feature`, `modelling`, `investigation`, `bug`, `decision`
+- If **hook-active**: the hook handles sync automatically — just commit normally. Tell the user: "Caliber will sync your agent configs automatically via the pre-commit hook."
+- If **no-hook**: run Caliber manually before committing:
+  1. Tell the user: "Caliber: Syncing agent configs with your latest changes..."
+  2. Run: `caliber refresh && git add CLAUDE.md .claude/ .cursor/ .cursorrules .github/copilot-instructions.md .github/instructions/ AGENTS.md CALIBER_LEARNINGS.md .agents/ .opencode/ 2>/dev/null`
+  3. After it completes, briefly tell the user what Caliber updated. Then proceed with the commit.
 
----
+**Valid `caliber refresh` options:** `--quiet` (suppress output) and `--dry-run` (preview without writing). Do not pass any other flags — options like `--auto-approve`, `--debug`, or `--force` do not exist and will cause errors.
 
-## Session End Checklist
+**`caliber config`** takes no flags — it runs an interactive provider setup. Do not pass `--provider`, `--api-key`, or `--endpoint`.
 
-1. Close completed issues; use `Fixes #N` in commit messages.
-2. File new GitHub issues for bugs or unresolved decisions found this session; confirm with user before creating.
-3. Ensure all edited files are syntactically valid; stub incomplete work with `raise NotImplementedError`.
-4. Propose updates to relevant `docs/` files and this file if architecture or decisions changed — do not push without user confirmation.
-5. Write a one-paragraph summary: what was completed (issue #s), any blockers, recommended next action.
+If `caliber` is not found, tell the developer to set up Caliber by running `/setup-caliber` in Claude Code or Cursor. Alternatively, they can run these commands in their terminal:
+```
+npx @rely-ai/caliber hooks --install
+npx @rely-ai/caliber refresh
+```
+<!-- /caliber:managed:pre-commit -->
+
+<!-- caliber:managed:learnings -->
+## Session Learnings
+
+Read `CALIBER_LEARNINGS.md` for patterns and anti-patterns learned from previous sessions.
+These are auto-extracted from real tool usage — treat them as project-specific rules.
+<!-- /caliber:managed:learnings -->
+
+<!-- caliber:managed:model-config -->
+## Model Configuration
+
+Recommended default: `claude-sonnet-4-6` with high effort (stronger reasoning; higher cost and latency than smaller models).
+Smaller/faster models trade quality for speed and cost — pick what fits the task.
+Pin your choice (`/model` in Claude Code, or `CALIBER_MODEL` when using Caliber with an API provider) so upstream default changes do not silently change behavior.
+
+<!-- /caliber:managed:model-config -->
+
+<!-- caliber:managed:sync -->
+## Context Sync
+
+This project uses [Caliber](https://github.com/caliber-ai-org/ai-setup) to keep AI agent configs in sync across Claude Code, Cursor, Copilot, and Codex.
+Configs update automatically before each commit via `caliber refresh`.
+If the pre-commit hook is not set up, the developer should run `/setup-caliber` in Claude Code or Cursor for automated setup. Alternatively, run in terminal:
+```bash
+npx @rely-ai/caliber hooks --install
+npx @rely-ai/caliber refresh
+git add CLAUDE.md .claude/ .cursor/ .cursorrules .github/copilot-instructions.md .github/instructions/ AGENTS.md CALIBER_LEARNINGS.md .agents/ .opencode/ 2>/dev/null
+```
+<!-- /caliber:managed:sync -->

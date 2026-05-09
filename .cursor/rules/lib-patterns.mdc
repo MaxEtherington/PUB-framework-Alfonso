@@ -1,0 +1,33 @@
+---
+description: Conventions for lib/ Python modules — parallelism, logging, spatial joins
+globs: lib/**/*.py
+alwaysApply: false
+---
+
+# lib/ Conventions
+
+## Parallelism (joblib)
+- Always `joblib.Parallel(n_jobs, verbose=int(verbose))` + `delayed()`
+- Split inputs: `np.array_split(times, nprocs)` before dispatch
+- Single-job guard: `if n_jobs <= 1: result = [func(...)]`
+
+## Verbose / Stderr
+- Every pipeline function: `verbose: bool` param
+- `print("...", file=stderr)` guarded by `if verbose:`
+
+## PathConfigManager
+- `from .paths import PathConfigManager` — all paths from `lib/paths.py`
+- Never hardcode output dirs; use `p.create_directories()`
+
+## Spatial Joins
+- `NearestNeighbors(metric="haversine")` — inputs radians, lat-first
+- `coords = np.deg2rad(np.hstack([lats.reshape(-1,1), lons.reshape(-1,1)]))`
+
+## Label / Column Conventions
+- Labels: `"positive"`, `"negative"`, `"unlabelled"` in `"label"` column
+- Coords: `"lon"`, `"lat"`, `"age (Ma)"` — exact strings
+- Use `lib/misc.py:load_data()` for all CSV/DataFrame inputs
+
+## Plate Models
+- `lib/plate_models.py:get_plate_reconstruction(model_name, model_dir)` — PMM + local fallback
+- Hold `_TemporaryFileWrapper` returned when `filter_topologies=True`

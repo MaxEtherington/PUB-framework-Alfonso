@@ -1,0 +1,36 @@
+---
+description: Config YAML structure and PathConfigManager merge hierarchy
+globs: config/*.yml
+alwaysApply: false
+---
+
+# Config YAML Conventions
+
+## Merge Order (lib/load_params.py:get_params)
+`defaults.all_notebooks` → `all_notebooks` → `defaults.notebook_XX` → `notebook_XX`
+
+## Required Top-Level Keys
+- `run_name` — output dir: `outputs/{run_name}/`
+- `plate_model.plate_model_name` — e.g. `zahirovic2022`
+- `plate_model.use_provided_plate_model` — `true` for bundled Alfonso2024
+- `timespan.min` / `timespan.max` — integer Ma
+- `deposits_filename` — CSV in `data_source/deposits/`
+- `regions_filename` — GeoJSON in `data_source/regions/`
+- `reference_feature: trenches`
+- `study_zone_buffer: 6.0` — degrees
+- `n_jobs`, `random_seed`, `overwrite_output`
+
+## Feature Sets
+```yaml
+feature_sets:
+  subduction: {enabled: true}   # trench distance, convergence
+  crustal:    {enabled: false}  # crustal thickness rasters
+  mantle:     {enabled: true, data_dir: zahirovic2022}
+  erodep:     {enabled: false}  # erosion/deposition
+```
+
+## Per-Notebook Override Pattern
+- Null (`~`) means inherit from `all_notebooks`
+- `notebook_00c.grid_resolution` — degrees (default `0.5`)
+- `notebook_04.outlier_contamination` — float (default `0.06`)
+- `notebook_01.create_svm` / `create_regional_models` — bool

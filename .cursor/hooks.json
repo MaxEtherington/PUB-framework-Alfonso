@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": "/Users/glados/.npm-global/bin/caliber learn observe"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "/Users/glados/.npm-global/bin/caliber learn observe --failure"
+      }
+    ],
+    "userPromptSubmit": [
+      {
+        "command": "/Users/glados/.npm-global/bin/caliber learn observe --prompt"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "/Users/glados/.npm-global/bin/caliber learn finalize --auto"
+      }
+    ]
+  }
+}

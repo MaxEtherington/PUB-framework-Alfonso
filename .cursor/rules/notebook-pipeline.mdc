@@ -1,0 +1,33 @@
+---
+description: Notebook execution via run_notebooks.py and papermill conventions
+globs: "*.ipynb,run_notebooks.py,nb_scripts/**/*.py"
+alwaysApply: false
+---
+
+# Notebook Pipeline
+
+## Running Notebooks
+
+Always use `run_notebooks.py`, not raw `jupyter nbconvert`:
+
+```bash
+python run_notebooks.py --config config/mantle_test.yml --notebooks 00b 00c 01
+python run_notebooks.py --config config/zahirovic_baseline.yml --setup
+python run_notebooks.py --config config/notebook_parameters_default.yml --cache-remote
+```
+
+## Notebook Codes
+`00a` → `00b` → `00c` → `01` → `02` → `03` → `04` → `05` → `06` → `07` → `08`
+
+## Config Discovery
+- Config resolved via `lib/paths.py:PathConfigManager(config_path, notebook)`
+- Parameters loaded by `lib/load_params.py:get_params(config_path, notebook)`
+- Available configs: `config/notebook_parameters_default.yml`, `config/zahirovic_baseline.yml`, `config/mantle_test.yml`
+
+## Jupytext Sync
+- Notebooks sync to `nb_scripts/` as `.py:percent` (see `jupytext.toml`)
+- Edit `.py` scripts in `nb_scripts/` and sync back, or edit `.ipynb` directly
+
+## Data Download
+- `lib/check_files.py` handles Zenodo (record/14010839) downloads automatically
+- Pre-cache for HPC: `--cache-remote` flag fetches plate models + prepared data
