@@ -1,0 +1,16 @@
+target-version = "py313"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+  "E501",  # line too long — scientific code is verbose
+  "E741",  # ambiguous variable names (l, O, I) — common in scientific/math code
+  "F401",  # unused imports — noqa comments already used in lib/ where needed
+]
+exclude = [
+  "nb_scripts/",
+  "playground/",
+  "submodules/",
+  "__pycache__/",
+]
