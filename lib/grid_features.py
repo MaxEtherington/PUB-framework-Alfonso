@@ -24,7 +24,7 @@ import xarray as xr
 import pint_xarray  # noqa
 import gplately as gpl
 
-import lib.mantle_variables as mv
+import lib.mantle_variables as mv  # noqa
 from .mantle_variables import variables, sample_mantle_var, sample_mantle_var_depths, sample_LAB_depths, calculate_lambdas
 
 # ==================
@@ -93,8 +93,8 @@ class GridFeatureRegistry:
 
     @property
     def mantle_dataset(self) -> xr.Dataset:
-        if (self._mantle_dataset is None 
-            or hash(getattr(self, "_mantle_data_dir", None)) 
+        if (self._mantle_dataset is None
+            or hash(getattr(self, "_mantle_data_dir", None))
             != getattr(self, "_mantle_data_dir_hash", None)
             is not None
         ):
@@ -108,7 +108,7 @@ class GridFeatureRegistry:
             )
             self._mantle_data_dir_hash = hash(self.mantle_data_dir.resolve())
         return self._mantle_dataset
-    
+
     # ── Registration ──────────────────────────────────────────────────────────
 
     def register(self, name: str, coords: Callable | None = None):
@@ -123,8 +123,8 @@ class GridFeatureRegistry:
         return decorator
 
     def register_batch(
-        self, 
-        declares: list[str] | str | None = None, 
+        self,
+        declares: list[str] | str | None = None,
         coords: Callable | None = None,
         probe: bool = True,
     ):
@@ -134,7 +134,7 @@ class GridFeatureRegistry:
             try:
                 if not probe:
                     raise RuntimeError("Batch producer registration skipped probing as requested.")
-                
+
                 probe_df = fn(
                     lons=np.array([0.0]),
                     lats=np.array([0.0]),
@@ -273,7 +273,7 @@ class GridFeatureRegistry:
                 self.get(name)
             except ValueError as e:
                 warnings.warn(f"Could not calculate feature '{name}': {e}", stacklevel=2)
-        
+
     def extract(
         self,
         point_data,
@@ -282,22 +282,22 @@ class GridFeatureRegistry:
         feature_names: list[str] | None = None,
     ) -> pd.DataFrame:
         """Extract all features for the given point data and context, returning a coregistered DataFrame."""
-        
+
         self.point_data = point_data
         self.mantle_data_dir = mantle_data_dir
         self.plate_reconstruction = plate_reconstruction
-        
+
         self.compute_all(feature_names)
-        
+
         new_cols = [c for c in self._results.columns if c not in point_data.columns]
         return point_data.join(self._results[new_cols])
-    
+
     def reset(self):
         """Clear cached results."""
         self._results = None
-        
+
     # ── Plotting ─────────────────────────────────────────────────────────────
-    
+
     def grid_sample(self, feature_names: list[str] | str, times: list[float] | float) -> xr.Dataset:
         """Sample a feature on a regular global grid at a specified time."""
         if isinstance(feature_names, str):
@@ -401,7 +401,7 @@ def _snap_and_reconstruct_points(
 
     if present_lons.size != point_indices.size or present_lats.size != point_indices.size:
         raise RuntimeError("Reconstruction output arrays have inconsistent sizes.")
-    
+
     if return_point_indices:
         return rlons, rlats, snapped_times, point_indices
     return rlons, rlats, snapped_times
@@ -506,7 +506,7 @@ def _base_mantle_features(
         'Speed',
         'Tangential_Speed',
         'Radial_Tangential_Ratio',
-        
+
         'LAB_Depth',
         '1000K_Isotherm_Depth',
         'Sublithospheric_Cold_Anomaly_Thickness',
@@ -529,7 +529,7 @@ def _base_mantle_features(
             "depths": depths_to_sample,
             "method": "linear",
         }
-            
+
         result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
 
         result = result.copy()
@@ -627,10 +627,10 @@ def _plate_velocity_components(
     """Sample plate velocity components at requested coordinates.
     Returns `(velocity_east, velocity_north)` in cm/yr"""
     recon = features.plate_reconstruction
-    
+
     east_vels = np.zeros(len(times), dtype=np.float64)
     north_vels = np.zeros(len(times), dtype=np.float64)
-    
+
     for t in np.unique(times):
         indices_at_time = np.where(times == t)[0]
         points_at_time = gpl.Points(
@@ -639,16 +639,16 @@ def _plate_velocity_components(
             present_lats[indices_at_time],
         )
         (
-            east_vels[indices_at_time], 
-            north_vels[indices_at_time], 
+            east_vels[indices_at_time],
+            north_vels[indices_at_time],
             successful_indices
         ) = points_at_time.plate_velocity(t, return_point_indices=True)
-        
+
         mask = np.ones_like(indices_at_time, dtype=bool)
         mask[successful_indices] = False  # Mask points where velocity could not be calculated (e.g., points that do not fall on a plate at this time)
         for arr in (east_vels, north_vels):
             arr[indices_at_time[mask]] = np.nan
-        
+
     return pd.DataFrame({
         "east_plate_velocity (cm/yr)": east_vels,
         "north_plate_velocity (cm/yr)": north_vels,
@@ -660,7 +660,7 @@ def _plate_acceleration(
     present_lons: np.ndarray,
     present_lats: np.ndarray,
     times: np.ndarray,
-    
+
     offset: float = 1.0,  # Myr; increment in the plate reconstruction over which to calculate acceleration
 ) -> pd.DataFrame:
     """
@@ -677,10 +677,10 @@ def _plate_acceleration(
         present_lats=present_lats,
         times=times,
     ).to_numpy()
-    
+
     delta_v = (v2 - v1) / offset
     acceleration = np.linalg.norm(delta_v, axis=1)
-    
+
     return pd.DataFrame(acceleration, columns=["plate_acceleration (cm/yr/Myr)"])
 
 
@@ -688,45 +688,45 @@ def _calculate_feature_delta(  # TODO
     present_lons: np.ndarray,
     present_lats: np.ndarray,
     times: np.ndarray,
-    
+
     feature_name: str,
 ) -> pd.DataFrame:
     """Sample the difference in a feature between two consecutive timesteps at requested coordinates."""
     valid_times = np.sort(np.unique(times))[::-1] # Sort descending (e.g. 100 Ma, 90 Ma, ..., 10 Ma)
-    
+
     # Find previous times by snapping current time indices back by one timestep
     previous_time_indices = np.digitize(times, valid_times) - 1
     previous_times = np.clip(
-        valid_times[previous_time_indices], 
+        valid_times[previous_time_indices],
         valid_times.min(), valid_times.max()
     )
-    
+
     # Instaniate Points to reconstruct points to timestep before birth age
     points = gpl.Points(
-        features.plate_reconstruction, 
+        features.plate_reconstruction,
         present_lons, present_lats,
         0.0,
     )
-    
+
     feature_prev = features.get().to_numpy()
     feature = features.get(feature_name).to_numpy()
-    
+
     delta = feature - feature_prev
-    
+
     return pd.DataFrame(delta, columns=["some_feature_delta"])
-    
-    
+
+
 
 
 def _relative_tangential_velocity_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
-    
+
     offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB
 ) -> pd.DataFrame:
     """Sample relative tangential velocity between plate and mantle at requested coordinates."""
-    
+
     def _fetch_tangential_velocity_at_LAB(var):
         da = variables.get(var, features.mantle_dataset)
         da = da.pint.quantify().pint.to({da.name: "cm/yr"}).pint.dequantify()
@@ -738,7 +738,7 @@ def _relative_tangential_velocity_LAB(
             times=times,
             offset_km=offset_km,
         ).to_numpy()
-    
+
     v_mantle = np.column_stack([
         _fetch_tangential_velocity_at_LAB(variable)
         for variable in ("East_Velocity", "North_Velocity")
@@ -747,15 +747,15 @@ def _relative_tangential_velocity_LAB(
         features.get(feature).to_numpy()
         for feature in ("east_plate_velocity (cm/yr)", "north_plate_velocity (cm/yr)")
     ])
-    
+
     delta_v = v_mantle - v_plate
     v_mag = np.linalg.norm(delta_v, axis=1)
 
     result = pd.DataFrame(
         np.column_stack([delta_v, v_mag]),
         columns=[
-            f"mantle_relative_east_velocity_LAB_{offset_km}km (cm/yr)", 
-            f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)", 
+            f"mantle_relative_east_velocity_LAB_{offset_km}km (cm/yr)",
+            f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)",
             f"mantle_relative_speed_LAB_{offset_km}km (cm/yr)"
         ]
     )
@@ -765,10 +765,10 @@ def _relative_tangential_velocity_LAB(
 for offset in [0, 40, 80, 120]:
     features.register_batch(
         declares=[
-            f"mantle_relative_east_velocity_LAB_{offset}km (cm/yr)", 
-            f"mantle_relative_north_velocity_LAB_{offset}km (cm/yr)", 
+            f"mantle_relative_east_velocity_LAB_{offset}km (cm/yr)",
+            f"mantle_relative_north_velocity_LAB_{offset}km (cm/yr)",
             f"mantle_relative_speed_LAB_{offset}km (cm/yr)"
-        ], 
+        ],
         coords=snap_to_mantle
     )(partial(_relative_tangential_velocity_LAB, offset_km=offset))
 
@@ -784,15 +784,15 @@ def _calculate_plate_frame_velocity_components(
     """
     v_east = features.get("east_plate_velocity (cm/yr)").to_numpy()
     v_north = features.get("north_plate_velocity (cm/yr)").to_numpy()
-    
+
     v = np.column_stack([v_east, v_north])
     v_mag = np.linalg.norm(v, axis=1)
-    
+
     with np.errstate(invalid='ignore', divide='ignore'):
         v_hat_parallel = np.where(v_mag[:, None] > 0, v / v_mag[:, None], 0)
     rotation_matrix = np.array([[0, 1], [-1, 0]])  # 90 degree rotation matrix to get plate transverse direction
     v_hat_transverse = v_hat_parallel @ rotation_matrix.T
-        
+
     return v_hat_parallel, v_hat_transverse
 
 
@@ -800,7 +800,7 @@ def _relative_velocity_in_plate_frame(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
-    
+
     offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB for calculating plate frame velocity components
 ) -> pd.DataFrame:
     """Sample relative velocity between plate and mantle in the reference frame of the overlying plate."""
@@ -808,9 +808,9 @@ def _relative_velocity_in_plate_frame(
         features.get(f"mantle_relative_east_velocity_LAB_{offset_km}km (cm/yr)").to_numpy(),
         features.get(f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)").to_numpy(),
     ])
-    
+
     v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components(lons, lats, times)
-    
+
     relative_parallel = np.vecdot(v_rel, v_hat_parallel, axis=1)
     relative_transverse = np.vecdot(v_rel, v_hat_transverse, axis=1)
     relative_speed = np.linalg.norm(np.column_stack([relative_parallel, relative_transverse]), axis=1)
@@ -818,8 +818,8 @@ def _relative_velocity_in_plate_frame(
     result = pd.DataFrame(
         np.column_stack([relative_parallel, relative_transverse, relative_speed]),
         columns=[
-            f"relative_velocity_parallel_to_plate_LAB_{offset_km}km (cm/yr)", 
-            f"relative_velocity_transverse_to_plate_LAB_{offset_km}km (cm/yr)", 
+            f"relative_velocity_parallel_to_plate_LAB_{offset_km}km (cm/yr)",
+            f"relative_velocity_transverse_to_plate_LAB_{offset_km}km (cm/yr)",
             f"relative_speed_LAB_{offset_km}km (cm/yr)"
         ]
     )
@@ -829,10 +829,10 @@ def _relative_velocity_in_plate_frame(
 for offset in [0, 40, 80, 120]:
     features.register_batch(
         declares=[
-            f"relative_velocity_parallel_to_plate_LAB_{offset}km (cm/yr)", 
-            f"relative_velocity_transverse_to_plate_LAB_{offset}km (cm/yr)", 
+            f"relative_velocity_parallel_to_plate_LAB_{offset}km (cm/yr)",
+            f"relative_velocity_transverse_to_plate_LAB_{offset}km (cm/yr)",
             f"relative_speed_LAB_{offset}km (cm/yr)"
-        ], 
+        ],
         coords=snap_to_mantle
     )(partial(_relative_velocity_in_plate_frame, offset_km=offset))
 
@@ -842,11 +842,11 @@ def _temperature_lambdas(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
-    
+
     n_lambdas: int = 5,
 ) -> pd.DataFrame:
     """Calculate the first `n_lambdas` polynomial regression coefficients of the mantle geotherm."""
-    
+
     result = calculate_lambdas(
         da=variables.get("Temperature_Deviation_CG", features.mantle_dataset),
         times=times,
@@ -855,5 +855,5 @@ def _temperature_lambdas(
         depth_range=(0, 400),
         n_lambdas=n_lambdas
     )
-    
+
     return result
