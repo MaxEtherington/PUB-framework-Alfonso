@@ -278,7 +278,7 @@ def _radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
     return da.rename("Radial_Tangential_Ratio")
 
 
-@variables.register("LAB_Depth")
+# @variables.register("LAB_Depth_Terraced")
 def _LAB_depth(ds: xr.Dataset) -> xr.DataArray:
     if "Lithosphere_Indicator" not in ds:
         raise ValueError("Dataset must contain 'Lithosphere_Indicator' variable to calculate LAB depth.")
@@ -289,8 +289,8 @@ def _LAB_depth(ds: xr.Dataset) -> xr.DataArray:
     return da.rename("LAB_Depth")
 
 
-@variables.register("LAB_Depth_Contour")
-def _lab_depth_contour(ds: xr.Dataset) -> xr.DataArray:
+@variables.register("LAB_Depth")
+def _LAB_depth_contour(ds: xr.Dataset) -> xr.DataArray:
     da = _calculate_contour_depth(
         ds=ds,
         var_name="Lithosphere_Indicator",
@@ -300,13 +300,32 @@ def _lab_depth_contour(ds: xr.Dataset) -> xr.DataArray:
     # Fallback to first non-boundary depth where no crossing is found, to avoid NaNs in difference calculations.
     # This is a heuristic choice; the actual LAB depth in these regions may be different.
     min_permissible_depth = ds.depth.isel(depth=-2).to_numpy()
-    da = da.where(~da.isnull() | da > min_permissible_depth, min_permissible_depth)
+    da = da.where(~da.isnull() | (da > min_permissible_depth), min_permissible_depth)
+    da.attrs = {"long_name": "depth to lithosphere-asthenosphere boundary", "units": "km"}
     return da.rename("LAB_Depth_Contour")
 
 
-# @variables.register("Slab_Depth") #TODO
+@variables.register("1000K_Isotherm_Depth")
+def _1000K_isotherm_depth(ds: xr.Dataset) -> xr.DataArray:
+    da = _calculate_contour_depth(ds, "FullTemperature_CG", target_contour=1000)
+    da.attrs = {"long_name": "depth to 1000K isotherm", "units": "km"}
+    return da.rename("1000K_Isotherm_Depth")
+
+
+@variables.register("Sublithospheric_Cold_Anomaly_Thickness")
 def _slab_depth(ds: xr.Dataset) -> xr.DataArray:
-    pass
+    da = variables.get("LAB_Depth", ds) - variables.get("1000K_Isotherm_Depth", ds)
+    da.attrs = {"long_name": "thickness of sub-lithospheric cold anomaly", "units": "km"}
+    return da.rename("Sublithospheric_Cold_Anomaly_Thickness")
+
+
+@variables.register("Cold_Anomaly_Magnitude")
+def _min_upper_mantle_relative_temperature(ds: xr.Dataset) -> xr.DataArray:
+    da = variables.get("Temperature_Deviation_CG", ds)
+    upper_mantle = da.sel(depth=slice(0, 400))
+    min_temp_dev = upper_mantle.min(dim="depth")
+    min_temp_dev.attrs = {"long_name": "magnitude of sub-lithospheric cold anomaly", "units": da.attrs.get("units", "")}
+    return min_temp_dev.rename("Cold_Anomaly_Magnitude")
 
 
 # ==================
