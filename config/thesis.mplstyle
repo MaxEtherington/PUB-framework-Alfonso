@@ -1,31 +1,181 @@
 # thesis.mplstyle
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared baseline for all thesis figures.
+# Load once at notebook startup:
+#
+#   plt.style.use(pcm.CONFIG_DIR / "thesis.mplstyle")
+#
+# Colour cycle — set in code after loading (mplstyle cannot call Python):
+#
+#   import cmcrameri.cm as cmc
+#   plt.rcParams["axes.prop_cycle"] = mpl.cycler(
+#       color=[cmc.batlow(i / 7) for i in range(8)]
+#   )
+#
+# Continuous colormaps — use cmc.batlow directly in each plot call:
+#   ax.scatter(..., cmap=cmc.batlow)
+#   ax.pcolormesh(..., cmap=cmc.batlow)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-context overrides
+# ─────────────────────────────────────────────────────────────────────────────
+# Apply these via mpl.rc_context({...}) around each figure for full flexibility.
+#
+# CATEGORICAL (bar charts, boxplots — horizontal):
+#   "axes.spines.left":     False,    # no spines at all
+#   "axes.spines.bottom":   False,
+#   "axes.grid":            True,
+#   "axes.grid.axis":       "x",      # vertical grid lines ⟂ to value axis
+#   "xtick.major.size":     0,        # no tick marks — grid does the job
+#   "ytick.major.size":     0,
+#   "xtick.major.width":    0,
+#   "ytick.labelcolor":     "black",  # category labels (feature names) in black
+#
+# LINE PLOTS:
+#   "axes.spines.left":     True,     # x and y spines on
+#   "axes.spines.bottom":   True,
+#   "axes.grid":            True,
+#   "axes.grid.axis":       "y",      # horizontal grid lines ⟂ to value axis
+#
+# SCATTER (default — this file's spine/tick settings apply without override):
+#   No overrides needed. Open spines (left + bottom), no grid.
+#   If a subtle grid is useful for a specific plot:
+#   "axes.grid": True, "axes.grid.axis": "both"
+#
+# GEOGRAPHIC MAPS (cartopy):
+#   All four spines must remain on — they form the projection frame.
+#   Style gridlines and coastlines independently in the plot call.
+#
+#   Additional conventions (see playground/style_demo_geo.py for full example):
+#
+#   Frame:        ax.spines["geo"].set_linewidth(0.8)   # noticeably heavier than gridlines
+#                 ax.spines["geo"].set_edgecolor("0.2")
+#
+#   Gridlines:    ax.gridlines(crs=ccrs.PlateCarree(), ...)
+#                 — PlateCarree() CRS is required even on Robinson; Robinson raises TypeError
+#                   if draw_labels=True is passed directly to its CRS.
+#
+#   Labels:       draw_labels={"top": "x", "right": "y", "bottom": False, "left": False}
+#                 gl.xlabel_style = {"size": 7, "color": "0.5"}
+#                 gl.ylabel_style = {"size": 7, "color": "0.5"}
+#                 gl.rotate_labels = False
+#
+#   Colorbars:    Horizontal, placed below the axes via fig.add_axes([x, y, w, h]).
+#                 Width scales with the number of items:
+#                   gap    = axes_width * 0.012
+#                   item_w = (axes_width * 0.80 - (n - 1) * gap) / n
+#                 Use add_bottom_items() from style_demo_geo.py — works for colorbars
+#                 and/or a legend in the same row.
+#
+#   Extend:       Set extend= explicitly on every colorbar:
+#                   extend="max"     upper end clips the data range
+#                   extend="min"     lower end clips
+#                   extend="both"    both ends clip
+#                   extend="neither" colorbar spans the full data range (e.g. probability 0–1)
+#
+#   Geography:    add_map_furniture() is purely stylistic (frame + gridlines only).
+#                 Land, ocean, and coastlines are per-plot — either cartopy.feature
+#                 or GPlately PlotTopologies, depending on the figure.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Font
+# ── Font ──────────────────────────────────────────────────────────────────────
 font.family        : sans-serif
-font.sans-serif    : Fira Sans, DejaVu Sans
-font.size          : 9
+font.sans-serif    : Verdana, Helvetica Neue, DejaVu Sans
+font.size          : 8
 font.weight        : normal
 
-# Text sizes
-axes.labelsize     : 9
+# ── Text sizes ────────────────────────────────────────────────────────────────
+axes.labelsize     : 8
 axes.labelweight   : normal
 axes.titlesize     : 10
-axes.titleweight   : medium
-xtick.labelsize    : 8
-ytick.labelsize    : 8
+axes.titleweight   : semibold
+xtick.labelsize    : 7
+ytick.labelsize    : 7
 
-# DPI
+# ── Colours ───────────────────────────────────────────────────────────────────
+# Axis labels (xlabel/ylabel) — black for legibility
+axes.labelcolor    : black
+
+# Tick marks and tick labels — 0.5 grey (recede without disappearing)
+xtick.color        : 0.5
+ytick.color        : 0.5
+xtick.labelcolor   : 0.5
+ytick.labelcolor   : 0.5
+
+# Grid lines — lighter than ticks so data reads first
+grid.color         : CCCCCC
+grid.linestyle     : --
+grid.linewidth     : 0.4
+
+# ── Spines ────────────────────────────────────────────────────────────────────
+axes.spines.top    : True
+axes.spines.right  : True
+axes.spines.left   : True
+axes.spines.bottom : True
+axes.linewidth     : 0.4
+axes.edgecolor     : 0.4
+
+# ── Ticks (default: thin, outward, matching spine weight) ─────────────────────
+xtick.direction    : out
+ytick.direction    : out
+xtick.major.width  : 0.4
+ytick.major.width  : 0.4
+xtick.minor.width  : 0.4
+ytick.minor.width  : 0.4
+xtick.major.size   : 4.0
+ytick.major.size   : 4.0
+xtick.minor.size   : 2.0
+ytick.minor.size   : 2.0
+
+# ── Grid (off by default — enable per context, see above) ─────────────────────
+axes.grid          : False
+axes.axisbelow     : True
+
+# ── Axis margins ──────────────────────────────────────────────────────────────
+# Zero margin: first/last tick aligns flush with the spine, no padding.
+# For scatter plots where edge points would be clipped, add breathing
+# room per-figure: ax.margins(x=0.05) or ax.set_xlim(lo, hi) explicitly.
+axes.xmargin       : 0
+axes.ymargin       : 0
+
+# ── Lines ─────────────────────────────────────────────────────────────────────
+lines.linewidth    : 1.4
+
+# ── Legend ────────────────────────────────────────────────────────────────────
+# No border by default; place with loc="best" unless layout demands otherwise.
+legend.frameon          : False
+legend.fontsize         : 8
+legend.title_fontsize   : 9
+
+# ── Padding ───────────────────────────────────────────────────────────────────
+axes.titlepad      : 8.0
+axes.labelpad      : 4.0
+
+# ── Figure sizes (ANU thesis — anuthesis.sty) ────────────────────────────────
+# Text block: \textwidth = 150 mm = 5.91 in  (anuthesis.sty, odd pages).
+# All figures should be sized to this width or a clean fraction of it.
+# Use the following Python snippet in notebooks for consistent sizing:
+#
+#   TW = 150 / 25.4                      # text width in inches (5.91)
+#   fig, ax = plt.subplots(figsize=(TW, TW * 0.50))   # full-width map (2:1)
+#   fig, ax = plt.subplots(figsize=(TW, TW * 0.62))   # full-width standard (golden ratio)
+#   fig, ax = plt.subplots(figsize=(TW, TW * 0.75))   # full-width tall (stats/bar charts)
+#   fig, axes = plt.subplots(1, 2, figsize=(TW, TW * 0.45))  # two-panel side-by-side
+#   fig, axes = plt.subplots(1, 3, figsize=(TW, TW * 0.40))  # three-panel row
+#
+# Common use cases:
+#   Maps (Robinson)         — (TW, TW * 0.50)  i.e. 5.91 × 2.95 in
+#   Probability maps        — (TW, TW * 0.50)
+#   Feature importance bars — (TW, TW * 0.75)  or taller if many features
+#   Dendrograms             — (TW, <variable>)  scale height with n_features * 0.25
+#   Scatter / line plots    — (TW, TW * 0.62)  golden ratio default
+#   Two-panel comparison    — (TW, TW * 0.45)  two subplots side by side
+#
+# The default below (golden ratio) is a reasonable fallback; override per figure.
+figure.figsize     : 5.91, 3.65
+
+# ── DPI and export ────────────────────────────────────────────────────────────
 figure.dpi         : 150
-savefig.dpi        : 300
+savefig.dpi        : 400
 savefig.bbox       : tight
 savefig.pad_inches : 0.05
-
-# Axes
-axes.linewidth     : 0.8
-xtick.major.width  : 0.8
-ytick.major.width  : 0.8
-xtick.minor.width  : 0.5
-ytick.minor.width  : 0.5
-
-# Lines
-lines.linewidth    : 1.2
