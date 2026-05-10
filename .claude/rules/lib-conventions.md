@@ -9,6 +9,7 @@ paths:
 - Never hardcode paths — use `PathConfigManager` from `lib/paths.py`
 - Access paths via attributes: `p.OUTPUT_DIR`, `p.TRAINING_DATA_PATH`, `p.GRID_DATA_PATH`, `p.MANTLE_DATA_DIR`, `p.PLATE_MODEL_DIR`
 - Construct once per run: `p = PathConfigManager(config_path, notebook='01')`
+- `p.use_features('mantle')` or `p.use_features('subduction.carbonates')` checks enabled state; nested dot-notation keys reflect nested `feature_sets` config structure
 
 ## Parallelism
 - Use `joblib.Parallel` + `joblib.delayed` for multi-process work; `n_jobs` comes from config

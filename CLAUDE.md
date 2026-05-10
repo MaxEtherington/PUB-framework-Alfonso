@@ -92,7 +92,7 @@ Key parameters:
 - `run_name`: output subdirectory under `output/`
 - `plate_model.use_provided_plate_model: true` → uses `alfonso2024_default`; or set `plate_model_name` (e.g. `zahirovic2022`)
 - `timespan.min`/`max`: in Ma
-- `feature_sets`: enable/disable `subduction`, `crustal`, `mantle`, `erodep`
+- `feature_sets`: enable/disable `subduction`, `crustal`, `mantle`, `erodep`; supports nesting (e.g. `subduction.carbonates`)
 - `use_extracted_data: true` → reads from `data_extracted/`; `false` → reads from `data_prepared/`
 - `deposits_filename`: CSV from `data_source/deposits/` (e.g. `deposits-Etherington.csv`, `Porphyry-deposits.csv`, `IOCG-deposits.csv`, `VMS-deposits.csv`, `SedCu-deposits.csv`)
 - `regions_filename`: GeoJSON from `data_source/regions/` (default: `regions.geojson`)
@@ -107,7 +107,7 @@ Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.
 
 ### `lib/` — core library
 
-- **`paths.py` (`PathConfigManager`)**: single source of truth for all file paths. Constructed from a config YAML; exposes `OUTPUT_DIR`, `TRAINING_DATA_PATH`, `GRID_DATA_PATH`, `MANTLE_DATA_DIR`, `PLATE_MODEL_DIR`, etc. Passed between notebooks.
+- **`paths.py` (`PathConfigManager`)**: single source of truth for all file paths. Constructed from a config YAML; exposes `OUTPUT_DIR`, `TRAINING_DATA_PATH`, `GRID_DATA_PATH`, `MANTLE_DATA_DIR`, `PLATE_MODEL_DIR`, etc. `active_feature_sets` is a set of dot-notation keys (e.g. `subduction`, `subduction.carbonates`) derived recursively from `feature_sets` config; `use_features()` accepts the same. Passed between notebooks.
 - **`load_params.py` (`get_params`)**: merges layered config YAML into flat dict for a given notebook. Called internally by `PathConfigManager`.
 - **`grid_features.py` (`GridFeatureRegistry`)**: decorator-based registry for geospatial feature samplers. Register with `@features.register(name)` or `@features.register_batch(declares=[...])`. Each feature has an optional `coordinate_resolver` (`snap_to_mantle`, `snap_to_plate_model`, or default `reconstructed`). Results cached in a `DataFrame`.
 - **`mantle_variables.py` (`MantleVariableRegistry`)**: registry for mantle dataset variables — base variables from netCDF and derived variables (e.g. `LAB_Depth`, `Sublithospheric_Cold_Anomaly_Thickness`, depth-averaged temperature deviations). Module-level singleton `variables` used by `grid_features.py`.

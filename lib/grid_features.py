@@ -856,10 +856,9 @@ def _relative_velocity_in_plate_frame(
 
     relative_parallel = np.vecdot(v_rel, v_hat_parallel, axis=1)
     relative_transverse = np.vecdot(v_rel, v_hat_transverse, axis=1)
-    relative_speed = np.linalg.norm(np.column_stack([relative_parallel, relative_transverse]), axis=1)
 
     result = pd.DataFrame(
-        np.column_stack([relative_parallel, relative_transverse, relative_speed]),
+        np.column_stack([relative_parallel, relative_transverse]),
         columns=[
             f"relative_velocity_parallel_to_plate_LAB_{offset_km}km (cm/yr)",
             f"relative_velocity_transverse_to_plate_LAB_{offset_km}km (cm/yr)",
@@ -1029,6 +1028,4 @@ def _temperature_lambdas_delta(lons: np.ndarray, lats: np.ndarray, times: np.nda
     delta_df = current.subtract(previous.values)
     delta_df.columns = [f"{col.replace(' ', '_')}_delta" for col in current.columns]
     return delta_df
-
-
 

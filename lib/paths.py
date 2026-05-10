@@ -4,26 +4,26 @@ from .load_params import get_params
 
 class PathConfigManager():
     """Lightweight class to hold and manage project config and config-derived paths between notebooks."""
-    
+
     # Invariant paths
     ROOT            = Path(__file__).resolve().parent.parent
     CONFIG_DIR      = ROOT / 'config'
     RUN_CONFIG_PATH = CONFIG_DIR / '.run_config.yml'
-    
+
     def __init__(
-        self, 
-        config_path, 
+        self,
+        config_path,
         notebook: str = None
     ):
         self.CONFIG_PATH = Path(config_path).resolve()
         self.notebook = notebook
-        
+
         try:
             self.update_paths(config_path=config_path, notebook=notebook)
         except KeyError as e:
             raise KeyError(f"Missing required config key: {e}") from e
-    
-    
+
+
     def update_paths(self, config_path=None, notebook=None):
         """Update exposed attributes (paths, config) based on the config file."""
         # Validate
@@ -39,7 +39,7 @@ class PathConfigManager():
             message_notebook = f" for notebook '{self.notebook}'" if self.notebook else ""
             raise Exception(f"Error loading config from {self.CONFIG_PATH}{message_notebook}: {e}") from e
         self.config = config
-        
+
         # Expose important config values as attributes
         self.plate_model_name = (
             "alfonso2024_default" if config['plate_model']['use_provided_plate_model']
@@ -47,7 +47,7 @@ class PathConfigManager():
         )
         self.use_provided_plate_model = config['plate_model']['use_provided_plate_model']
         self.use_extracted_data = config['use_extracted_data']
-        
+
         # Derive paths from config
         self.PREPARED_DATA_DIR = self.ROOT / 'data_prepared'
 
@@ -64,30 +64,39 @@ class PathConfigManager():
         self.GRID_DATA_PATH = self.POINTS_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
-        
+
         # Create active feature set list, paths, filenames
         # Feature sets group related features by source data; each can be enabled/disabled in the config
-        self.active_feature_sets = [
-            feature_set for feature_set, params in config['feature_sets'].items() if params['enabled']
-        ]
-    
-    
+        # Some feature sets are nested, e.g. carbonate-related features rely on subduction kinematics
+        def find_active_feature_sets(mapping, parent_key="", parent_enabled=True):
+            for key, val in mapping.items():
+                if not isinstance(val, dict):
+                    continue
+                full_key = f"{parent_key}.{key}" if parent_key else key
+                enabled = parent_enabled and val.get('enabled', False)
+                if enabled:
+                    yield full_key
+                yield from find_active_feature_sets(val, parent_key=full_key, parent_enabled=enabled)
+
+        self.active_feature_sets = set(find_active_feature_sets(config['feature_sets']))
+
+
     def use_features(self, feature_set: str) -> bool:
         return feature_set in self.active_feature_sets
-    
-    
+
+
     def create_directories(self):
         """Create all necessary directories based on current config."""
         config = get_params(self.CONFIG_PATH)
-    
+
         for path in [self.PLATE_MODEL_DIR, self.OUTPUT_DIR]:
             path.mkdir(parents=True, exist_ok=True)
-            
+
         if config['use_extracted_data']:
             for path in [self.EXTRACTED_DATA_DIR, self.RASTER_DATA_DIR, self.POINTS_DATA_DIR]:
                 path.mkdir(parents=True, exist_ok=True)
-    
-    
+
+
     def validate_input_paths(self):
         """Raise an error if expected source data paths do not exist."""
         config = get_params(self.CONFIG_PATH)
@@ -97,11 +106,11 @@ class PathConfigManager():
             for path in [self.DEPOSITS_PATH, self.REGIONS_PATH]:
                 if not path.exists():
                     missing_paths.append(path)
-        
+
         if self.use_features('mantle'):
             for path in [self.MANTLE_DATA_DIR]:
                 if not path.exists():
                     missing_paths.append(path)
-        
+
         if missing_paths:
             raise FileNotFoundError("Expected source files not found:" + "".join(f"\n  - {path.relative_to(self.ROOT)}" for path in missing_paths))
