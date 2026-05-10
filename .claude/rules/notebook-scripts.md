@@ -9,7 +9,8 @@ paths:
 ## CRITICAL: always edit nb_scripts/, never .ipynb directly
 - All notebook logic lives in `nb_scripts/<notebook>.py` (jupytext percent format)
 - `.ipynb` files are derived — never edit them programmatically
-- **Syncing is automatic**: a `PostToolUse` hook in `.claude/settings.json` runs `jupytext --sync` immediately after any `Edit` or `Write` to a file matching `nb_scripts/*.py`. No manual sync step is needed.
+- A `PreToolUse` guard in `.claude/settings.json` blocks direct `.ipynb` editing at the tool level.
+- **Syncing is automatic**: a `FileChanged` hook in `.claude/settings.json` runs `jupytext --sync` when `nb_scripts/*.py` files are saved. No manual sync step is needed.
 - To sync manually (e.g. after editing outside Claude Code): `jupytext --sync nb_scripts/<notebook>.py`
 
 ## Running notebooks

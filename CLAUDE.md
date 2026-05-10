@@ -42,6 +42,8 @@ ruff check lib/ --fix    # auto-fix
 
 Config in `ruff.toml`: Python 3.13, line-length 120. Ignores `E501` (line length), `E741` (ambiguous names), `F401` (unused imports). `nb_scripts/`, `submodules/`, `playground/` are excluded. The `.ruff_cache/` directory (containing `CACHEDIR.TAG`) is auto-generated and not committed to version control.
 
+A `PostToolUse` hook automatically runs `ruff check` after any `Edit` or `Write` to `lib/*.py` files.
+
 ## Notebook pipeline sequence
 
 | Notebook | Purpose |
@@ -66,7 +68,7 @@ This workflow always uses `use_extracted_data: true` and runs `00a`–`00c` to g
 
 **Always edit `nb_scripts/*.py` — never `.ipynb` files directly.**
 
-Syncing is automatic: a `PostToolUse` hook in `.claude/settings.json` runs `jupytext --sync` after any `Edit` or `Write` to a file matching `nb_scripts/*.py`. No manual sync step is needed when Claude edits these files.
+Syncing is automatic: a `FileChanged` hook in `.claude/settings.json` runs `jupytext --sync` when `nb_scripts/*.py` files are saved. A `PreToolUse` guard in `.claude/settings.json` blocks direct `.ipynb` editing. No manual sync step is needed when Claude edits these files.
 
 To sync manually (e.g. after editing outside Claude Code):
 ```bash
