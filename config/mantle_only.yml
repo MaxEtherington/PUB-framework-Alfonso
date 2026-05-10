@@ -8,7 +8,7 @@ all_notebooks:
     plate_model_name: zahirovic2022
   timespan:
     min: 0
-    max: 400
+    max: 350
 
   use_extracted_data: true       # If true, use data extracted via notebooks, rather than pre-prepared data from Zenodo
   
@@ -16,24 +16,24 @@ all_notebooks:
   regions_filename: "regions.geojson" # optional regions file, saved in data/
   
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
-  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
+  study_zone_buffer: 9.0 # degrees    # radius around reference_feature for unlabelled point generation
 
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age
-      enabled: true
+      enabled: false
       carbonate:
         enabled: false                # e.g. carbonate thickness
     crustal:                          # e.g. crustal thickness
       enabled: false
     mantle:                           # e.g. temperature, flow velocity
       enabled: true
-      data_dir: zahirovic2022
+      data_dir: zahirovic2022_cratonfix
     erodep:                           # e.g. cumulative erosion/deposition (not strictly a "feature set", but included here for convenience)
       enabled: false
 
-  n_jobs: 8
+  n_jobs: 22
   verbose: true
-  random_seed: 1234
+  random_seed: 15001
   overwrite_output: false
 
 
@@ -152,6 +152,8 @@ defaults:
   feature_sets:
     subduction:
       enabled: false
+      carbonate:
+        enabled: false
     crustal:
       enabled: false
     mantle:

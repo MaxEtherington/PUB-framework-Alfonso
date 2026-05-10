@@ -45,5 +45,5 @@ dependencies:
       - platetectonictools==0.4.1
       - six==1.16.0
       - slabdip==4.2.2
-      - git+https://github.com/pulearn/pulearn.git@master  # contains recent features for balanced bootstrapping
+      - git+https://github.com/pulearn/pulearn.git@6ef17564c595dddb2a0d6ee32856c013101a328f  # contains recent features for balanced bootstrapping
       - ruff>=0.4.0
