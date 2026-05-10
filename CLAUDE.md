@@ -33,6 +33,10 @@ python run_notebooks.py --list-defaults
 python run_notebooks.py --config config/notebook_parameters_default.yml --setup
 ```
 
+## Figures and plotting
+
+Read `config/thesis.mplstyle` before creating or modifying any plot. All style decisions, figure sizes, and per-context guidelines are documented there.
+
 ## Linting
 
 ```bash

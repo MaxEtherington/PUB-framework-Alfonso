@@ -21,6 +21,8 @@ all_notebooks:
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age
       enabled: false
+      carbonate:                      # sediment/carbonate thickness, paleobathymetry, crustal CO₂
+        enabled: false
     crustal:                          # e.g. crustal thickness
       enabled: false
     mantle:                           # e.g. temperature, flow velocity
