@@ -22,7 +22,8 @@ The workflow is designed in a modular fashion. The parameters of any classifier 
     - `00b-extract_training_data.ipynb`
     - `00c-extract_grid_data.ipynb`
 3. Run these notebooks to train a PU classifier and create prospectivity maps and other plots:
-    - `01-create_classifiers.ipynb`
+    - `01a-select_features.ipynb`
+    - `01b-train_validate_classifiers.ipynb`
     - `02-create_probability_maps.ipynb`
     - `03-create_probability_animations.ipynb`
     - `04-create_erosion_distribution.ipynb`
@@ -30,5 +31,3 @@ The workflow is designed in a modular fashion. The parameters of any classifier 
     - `06-create_preservation_animations.ipynb`
     - `07-partial_dependence.ipynb`
     - `08-time_series.ipynb`
-
-Notebooks may also be run together in the CLI using the script `run_notebooks.py`.
