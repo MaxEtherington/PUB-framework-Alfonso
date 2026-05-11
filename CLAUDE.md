@@ -119,6 +119,7 @@ Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.
 - **`generate_unlabelled_points.py`**: generates random unlabelled points within study area polygons.
 - **`coregister_combined_point_data.py`**: joins point data to subduction zone kinematics via haversine nearest-neighbour.
 - **`coregister_crustal_thickness.py`**: joins points to time-dependent crustal thickness rasters.
+- **`coregister_ocean_rasters.py`**: joins subduction zone kinematic data to time-dependent ocean plate rasters (seafloor age, spreading rate, sediment thickness, carbonate thickness, crustal CO2) via plate-ID-masked haversine nearest-neighbour sampling.
 - **`create_plate_maps.py`**: rasterises topological plate models to netCDF.
 - **`assign_regions.py`**: spatial joins using `data_source/regions/regions.geojson`.
 - **`misc.py`**: shared utilities — `reconstruct_by_topologies`, `filter_topological_features`, `load_data`, `calculate_slab_flux`.

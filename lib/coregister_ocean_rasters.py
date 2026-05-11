@@ -163,7 +163,7 @@ def run_coregister_ocean_rasters(
             df_array[i] = df
         input_data_split = np.array_split(df_array, nprocs)
 
-        with Parallel(nprocs, verbose=int(verbose)) as parallel:
+        with Parallel(nprocs, prefer="threads", verbose=int(verbose)) as parallel:
             results = parallel(
                 delayed(_run_subset)(
                     times=t,
