@@ -850,8 +850,8 @@ def _relative_tangential_velocity_LAB(
 def _calculate_plate_frame_velocity_components(
 ) -> (np.ndarray, np.ndarray):
     """
-    Samples the relative velocity in the reference frame of the overlying plate. 
-    Returns plate-parallel velocity and plate-transverse velocity. 
+    Samples the relative velocity in the reference frame of the overlying plate.
+    Returns plate-parallel velocity and plate-transverse velocity.
     Plate-parallel velocity is positive in the direction of plate motion, negative in the opposite direction.
     Plate transverse velocity is positive to the right of the direction of plate motion, negative to the left.
     """
@@ -1003,36 +1003,41 @@ features.register_batch(
 # Columns produced by _base_mantle_features_depths that have delta features.
 # Names must match the actual output column names (new convention: lowercase, units in parens).
 base_mantle_features = [
-    'lab_depth',
-    '1000k_isotherm_depth',
-    'sublithospheric_cold_anomaly_thickness',
-    'cold_anomaly_magnitude',
-    'temperature_deviation_avg_0-400km',
-    'temperature_deviation_avg_0-400km_rolling_30ma',
-    'temperature_deviation_avg_0-400km_rolling_50ma',
-    'temperature_deviation_avg_100-400km',
-    'temperature_deviation_avg_100-400km_rolling_30ma',
-    'temperature_deviation_avg_100-400km_rolling_50ma',
-    'temperature_deviation_avg_lab-120km',
-    'temperature_deviation_avg_lab-120km_rolling_30ma',
-    'temperature_deviation_avg_lab-120km_rolling_50ma',
-    'temperature_deviation_avg_lab-160km',
-    'temperature_deviation_avg_lab-160km_rolling_30ma',
-    'temperature_deviation_avg_lab-160km_rolling_50ma',
-    'temperature_deviation_avg_lab-200km',
-    'temperature_deviation_avg_lab-200km_rolling_30ma',
-    'temperature_deviation_avg_lab-200km_rolling_50ma',
-    'temperature_deviation_avg_lab-300km',
-    'temperature_deviation_avg_lab-300km_rolling_30ma',
-    'temperature_deviation_avg_lab-300km_rolling_50ma',
-    'temperature_deviation_avg_lab-400km',
-    'temperature_deviation_avg_lab-400km_rolling_30ma',
-    'temperature_deviation_avg_lab-400km_rolling_50ma',
-    'temperature_deviation_lambdas',
+    'lab_depth (km)',
+    '1000k_isotherm_depth (km)',
+    'sublithospheric_cold_anomaly_thickness (km)',
+    'cold_anomaly_magnitude (K)',
+    # 'temperature_deviation_avg_0-400km (K)',
+    # 'temperature_deviation_avg_0-400km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_0-400km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_100-400km (K)',
+    # 'temperature_deviation_avg_100-400km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_100-400km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_lab-120km (K)',
+    # 'temperature_deviation_avg_lab-120km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_lab-120km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_lab-160km (K)',
+    # 'temperature_deviation_avg_lab-160km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_lab-160km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_lab-200km (K)',
+    # 'temperature_deviation_avg_lab-200km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_lab-200km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_lab-300km (K)',
+    # 'temperature_deviation_avg_lab-300km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_lab-300km_rolling_50ma (K)',
+    # 'temperature_deviation_avg_lab-400km (K)',
+    # 'temperature_deviation_avg_lab-400km_rolling_30ma (K)',
+    # 'temperature_deviation_avg_lab-400km_rolling_50ma (K)',
+#     'temperature_deviation_cg_lambda_0 (K)',
+#     'temperature_deviation_cg_lambda_1 (K)',
+#     'temperature_deviation_cg_lambda_2 (K)',
+#     'temperature_deviation_cg_lambda_3 (K)',
+#     'temperature_deviation_cg_lambda_4 (K)',
 ]
 
 @features.register_batch(
-    declares=[_to_delta_name(fn) for fn in base_mantle_features],
+    # declares=[_to_delta_name(fn) for fn in base_mantle_features],
+    declares=["Base_Mantle_Deltas"],
     coords=snap_to_mantle,
     probe=False,
 )
@@ -1046,16 +1051,16 @@ def _mantle_variable_deltas(lons: np.ndarray, lats: np.ndarray, times: np.ndarra
     })
 
 
-@features.register_batch(
-    declares="Temperature_Deviation_Lambdas_delta",
-    coords=snap_to_mantle,
-    probe=False,
-)
-def _temperature_lambdas_delta(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
-    offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
-    current = _temperature_lambdas(lons, lats, times)
-    previous = _temperature_lambdas(offset_lons, offset_lats, offset_times)
-    delta_df = current.subtract(previous.values)
-    delta_df.columns = [f"{col.replace(' ', '_')}_delta" for col in current.columns]
-    return delta_df
+# @features.register_batch(
+#     declares="Temperature_Deviation_Lambdas_delta",
+#     coords=snap_to_mantle,
+#     probe=False,
+# )
+# def _temperature_lambdas_delta(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
+#     offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
+#     current = _temperature_lambdas(lons, lats, times)
+#     previous = _temperature_lambdas(offset_lons, offset_lats, offset_times)
+#     delta_df = current.subtract(previous.values)
+#     delta_df.columns = [f"{col.replace(' ', '_')}_delta" for col in current.columns]
+#     return delta_df
 
