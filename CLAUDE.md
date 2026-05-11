@@ -21,10 +21,10 @@ All notebooks run via `run_notebooks.py` using `papermill`:
 
 ```bash
 # Run specific notebooks
-python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 00b 00c 01
+python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 00b 00c 01a 01b
 
 # Overwrite notebook in-place (saves to .ipynb itself)
-python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 01 -o
+python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 01b -o
 
 # List available notebook codes
 python run_notebooks.py --list-defaults
@@ -55,7 +55,8 @@ A `PostToolUse` hook automatically runs `ruff check` after any `Edit` or `Write`
 | `00a` | Generate/download plate model data |
 | `00b` | Extract training data (deposit points) |
 | `00c` | Extract grid data (regular grid for maps) |
-| `01` | Train PU classifiers (PU + SVM, regional models) |
+| `01a` | Select features for classifier |
+| `01b` | Train and validate PU classifiers (PU + SVM, regional models) |
 | `02` | Create prospectivity probability maps |
 | `03` | Create probability animations |
 | `04` | Erosion/preservation distribution analysis |
@@ -92,14 +93,14 @@ Key parameters:
 - `run_name`: output subdirectory under `output/`
 - `plate_model.use_provided_plate_model: true` → uses `alfonso2024_default`; or set `plate_model_name` (e.g. `zahirovic2022`)
 - `timespan.min`/`max`: in Ma
-- `feature_sets`: enable/disable `subduction`, `crustal`, `mantle`, `erodep`; supports nesting (e.g. `subduction.carbonates`)
+- `feature_sets`: enable/disable `subduction`, `crustal`, `mantle`, `erodep`; supports nesting (e.g. `subduction.carbonate`)
 - `use_extracted_data: true` → reads from `data_extracted/`; `false` → reads from `data_prepared/`
 - `deposits_filename`: CSV from `data_source/deposits/` (e.g. `deposits-Etherington.csv`, `Porphyry-deposits.csv`, `IOCG-deposits.csv`, `VMS-deposits.csv`, `SedCu-deposits.csv`)
 - `regions_filename`: GeoJSON from `data_source/regions/` (default: `regions.geojson`)
 - `grid_resolution`: degrees (notebook_00c, default `0.5`)
 - `n_jobs`: parallelism via `joblib`
 
-Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`, `config/zahirovic_baseline.yml`.
+Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`, `config/zahirovic_baseline.yml`, `config/mantle_only.yml`.
 
 ## Architecture
 
@@ -107,7 +108,7 @@ Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.
 
 ### `lib/` — core library
 
-- **`paths.py` (`PathConfigManager`)**: single source of truth for all file paths. Constructed from a config YAML; exposes `OUTPUT_DIR`, `TRAINING_DATA_PATH`, `GRID_DATA_PATH`, `MANTLE_DATA_DIR`, `PLATE_MODEL_DIR`, etc. `active_feature_sets` is a set of dot-notation keys (e.g. `subduction`, `subduction.carbonates`) derived recursively from `feature_sets` config; `use_features()` accepts the same. Passed between notebooks.
+- **`paths.py` (`PathConfigManager`)**: single source of truth for all file paths. Constructed from a config YAML; exposes `OUTPUT_DIR`, `TRAINING_DATA_PATH`, `GRID_DATA_PATH`, `MANTLE_DATA_DIR`, `PLATE_MODEL_DIR`, etc. `active_feature_sets` is a set of dot-notation keys (e.g. `subduction`, `subduction.carbonate`) derived recursively from `feature_sets` config; `use_features()` accepts the same. Passed between notebooks.
 - **`load_params.py` (`get_params`)**: merges layered config YAML into flat dict for a given notebook. Called internally by `PathConfigManager`.
 - **`grid_features.py` (`GridFeatureRegistry`)**: decorator-based registry for geospatial feature samplers. Register with `@features.register(name)` or `@features.register_batch(declares=[...])`. Each feature has an optional `coordinate_resolver` (`snap_to_mantle`, `snap_to_plate_model`, or default `reconstructed`). Results cached in a `DataFrame`.
 - **`mantle_variables.py` (`MantleVariableRegistry`)**: registry for mantle dataset variables — base variables from netCDF and derived variables (e.g. `LAB_Depth`, `Sublithospheric_Cold_Anomaly_Thickness`, depth-averaged temperature deviations). Module-level singleton `variables` used by `grid_features.py`.
@@ -198,7 +199,6 @@ If `caliber` is not found, tell the user: "This project uses Caliber for agent c
 ## Session Learnings
 
 Read `CALIBER_LEARNINGS.md` for patterns and anti-patterns learned from previous sessions.
-These are auto-extracted from real tool usage — treat them as project-specific rules.
 ## Model Configuration
 
 Recommended default: `claude-sonnet-4-6` with high effort (stronger reasoning; higher cost and latency than smaller models).

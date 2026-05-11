@@ -14,7 +14,7 @@ paths:
 - To sync manually (e.g. after editing outside Claude Code): `jupytext --sync nb_scripts/<notebook>.py`
 
 ## Running notebooks
-- Via `run_notebooks.py`: `python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 01`
+- Via `run_notebooks.py`: `python run_notebooks.py --config config/notebook_parameters_default.yml --notebooks 01a 01b`
 - `-o` flag overwrites the `.ipynb` in-place
 - `--setup` validates config and creates directories without running
 

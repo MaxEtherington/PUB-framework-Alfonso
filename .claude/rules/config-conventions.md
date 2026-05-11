@@ -15,7 +15,7 @@ paths:
 - `plate_model.use_provided_plate_model: true` → uses `alfonso2024_default`
 - `plate_model.plate_model_name`: e.g. `zahirovic2022`, `clennett2020`
 - `feature_sets.mantle.data_dir`: must match a subdirectory in the mantle data path
-- `feature_sets` supports nesting (e.g. `feature_sets.subduction.carbonates.enabled`); a child set is active only if its parent is also enabled
+- `feature_sets` supports nesting (e.g. `feature_sets.subduction.carbonate.enabled`); a child set is active only if its parent is also enabled
 - `deposits_filename`: must be a CSV present in `data_source/deposits/`
 - `regions_filename`: must be a GeoJSON present in `data_source/regions/`
 - `overwrite_output: false` is the safe default — set `true` only when re-running intentionally

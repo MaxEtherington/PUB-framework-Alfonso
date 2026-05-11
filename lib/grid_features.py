@@ -535,8 +535,30 @@ def _offset_coordinates_by_time(
 
 
 # ===========================
+# Naming helpers
+# ===========================
+
+def _lab_suffix(offset_km: float) -> str:
+    """Return LAB-offset column suffix: '_lab' for offset 0, '_lab+Nkm' otherwise."""
+    return "_lab" if offset_km == 0 else f"_lab+{int(offset_km)}km"
+
+
+def _to_delta_name(col: str) -> str:
+    """'foo_bar (km)' → 'foo_bar_delta (km/timestep)'."""
+    if " (" in col:
+        name, _, units = col.rpartition(" (")
+        return f"{name}_delta ({units[:-1]}/timestep)"
+    return f"{col}_delta"
+
+
+# ===========================
 # Batch-register mantle vars
 # ===========================
+
+unit_conversion_mapping = {
+    "kelvin": "K",
+    "meter / second": "cm/yr",
+}
 
 @features.register_batch(declares="Base_Mantle_Features", coords=snap_to_mantle, probe=False)
 def _base_mantle_features_depths(
@@ -564,7 +586,6 @@ def _base_mantle_features_depths(
         'Speed',
         'Tangential_Speed',
         'Radial_Tangential_Ratio',
-
         'LAB_Depth',
         '1000K_Isotherm_Depth',
         'Sublithospheric_Cold_Anomaly_Thickness',
@@ -605,12 +626,17 @@ def _base_mantle_features_depths(
 
         result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
 
+        units = da.attrs.get("units", "unitless")
+        to_units = units
+        if units in unit_conversion_mapping.keys():
+            to_units = unit_conversion_mapping[units]
+            da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+        clean_var = var.lower().replace("_cg", "")
         # Rename columns to include variable name and depth if applicable
         if len(result.columns) == len(depths_to_sample):  # Sampled across depths
-            # Rename actual DataFrame columns
-            result.columns = [f"{var}_{int(d)}km" for d in depths_to_sample]
+            result.columns = [f"{clean_var}_{int(d)}km ({to_units})" for d in depths_to_sample]
         elif len(result.columns) == 1:  # Single depth or depth-independent
-            result.columns = [var]
+            result.columns = [f"{clean_var} ({to_units})"]
         else:
             raise ValueError(f"Unexpected number of columns in result for variable '{var}': {len(result.columns)}")
 
@@ -674,6 +700,11 @@ def _base_mantle_features_LAB(
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
+        units = da.attrs.get("units", "unitless")
+        to_units = units
+        if units in unit_conversion_mapping.keys():
+            to_units = unit_conversion_mapping[units]
+            da = da.pint.quantify().pint.to(to_units).pint.dequantify()
         new_columns = []
         for offset in offsets_to_sample:
             result = sample_LAB_depths(
@@ -686,13 +717,12 @@ def _base_mantle_features_LAB(
             )
             new_columns.append(result)
         result = pd.concat(new_columns, axis=1)
-        # Rename columns to include variable name and depth if applicable
-        if len(result.columns) == len(offsets_to_sample):  # Sampled across depths
-            # Rename actual DataFrame columns
-            result.columns = [f"{var}_LAB+{int(d)}km" for d in offsets_to_sample]
-            # Append overall average column
-        elif len(result.columns) == 1:  # Single depth or depth-independent
-            result.columns = [f"{var}_LAB"]
+        clean_var = var.lower().replace("_cg", "")
+        # Rename columns to include variable name and LAB offset
+        if len(result.columns) == len(offsets_to_sample):  # Sampled across offsets
+            result.columns = [f"{clean_var}{_lab_suffix(d)} ({to_units})" for d in offsets_to_sample]
+        elif len(result.columns) == 1:  # Single offset or depth-independent
+            result.columns = [f"{clean_var}_lab ({to_units})"]
         else:
             raise ValueError(f"Unexpected number of columns in result for variable '{var}': {len(result.columns)}")
 
@@ -783,7 +813,7 @@ def _relative_tangential_velocity_LAB(
 
     def _fetch_tangential_velocity_at_LAB(var):
         da = variables.get(var, features.mantle_dataset)
-        da = da.pint.quantify().pint.to({da.name: "cm/yr"}).pint.dequantify()
+        da = da.pint.quantify().pint.to("cm/yr").pint.dequantify()
         return sample_LAB_depths(
             ds = features.mantle_dataset,
             da = da,
@@ -808,9 +838,9 @@ def _relative_tangential_velocity_LAB(
     result = pd.DataFrame(
         np.column_stack([delta_v, v_mag]),
         columns=[
-            f"mantle_relative_east_velocity_LAB_{offset_km}km (cm/yr)",
-            f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)",
-            f"mantle_relative_speed_LAB_{offset_km}km (cm/yr)"
+            f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)",
+            f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)",
+            f"mantle_relative_speed{_lab_suffix(offset_km)} (cm/yr)",
         ]
     )
     return result
@@ -848,8 +878,8 @@ def _relative_velocity_in_plate_frame(
 ) -> pd.DataFrame:
     """Sample relative velocity between plate and mantle in the reference frame of the overlying plate."""
     v_rel = np.column_stack([
-        features.get(f"mantle_relative_east_velocity_LAB_{offset_km}km (cm/yr)").to_numpy(),
-        features.get(f"mantle_relative_north_velocity_LAB_{offset_km}km (cm/yr)").to_numpy(),
+        features.get(f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
+        features.get(f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
     ])
 
     v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components()
@@ -860,8 +890,8 @@ def _relative_velocity_in_plate_frame(
     result = pd.DataFrame(
         np.column_stack([relative_parallel, relative_transverse]),
         columns=[
-            f"relative_velocity_parallel_to_plate_LAB_{offset_km}km (cm/yr)",
-            f"relative_velocity_transverse_to_plate_LAB_{offset_km}km (cm/yr)",
+            f"relative_velocity_parallel_to_plate{_lab_suffix(offset_km)} (cm/yr)",
+            f"relative_velocity_transverse_to_plate{_lab_suffix(offset_km)} (cm/yr)",
         ]
     )
     return result
@@ -931,18 +961,18 @@ for LAB_offset in LAB_offsets:
     # Register relative tangential velocity features at multiple depths below the LAB
     features.register_batch(
         declares=[
-            f"mantle_relative_east_velocity_LAB_{LAB_offset}km (cm/yr)",
-            f"mantle_relative_north_velocity_LAB_{LAB_offset}km (cm/yr)",
-            f"mantle_relative_speed_LAB_{LAB_offset}km (cm/yr)"
+            f"mantle_relative_east_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
+            f"mantle_relative_north_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
+            f"mantle_relative_speed{_lab_suffix(LAB_offset)} (cm/yr)",
         ],
         coords=snap_to_mantle
     )(partial(_relative_tangential_velocity_LAB, offset_km=LAB_offset))
 
-    # Register plate-relative tangential velocity features at multiple depths below the LAB
+    # Register plate-relative tangential velocity features at the LAB
     features.register_batch(
         declares=[
-            f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)",
-            f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)",
+            f"relative_velocity_parallel_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
+            f"relative_velocity_transverse_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
         ],
         coords=snap_to_mantle
     )(partial(_relative_velocity_in_plate_frame, offset_km=LAB_offset))
@@ -970,39 +1000,39 @@ features.register_batch(
 
 
 
-# Hardcoded because these live in the Base_Mantle_Features placeholder batch and aren't
-# individually resolvable in features.available until the batch sampler is first called.
+# Columns produced by _base_mantle_features_depths that have delta features.
+# Names must match the actual output column names (new convention: lowercase, units in parens).
 base_mantle_features = [
-    'LAB_Depth',
-    '1000K_Isotherm_Depth',
-    'Sublithospheric_Cold_Anomaly_Thickness',
-    'Cold_Anomaly_Magnitude',
-    'Temperature_Deviation_Avg_0-400km',
-    'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_100-400km',
-    'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_LAB-120km',
-    'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_LAB-160km',
-    'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_LAB-200km',
-    'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_LAB-300km',
-    'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
-    'Temperature_Deviation_Avg_LAB-400km',
-    'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
-    'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma',
-    'Temperature_Deviation_Lambdas',
+    'lab_depth',
+    '1000k_isotherm_depth',
+    'sublithospheric_cold_anomaly_thickness',
+    'cold_anomaly_magnitude',
+    'temperature_deviation_avg_0-400km',
+    'temperature_deviation_avg_0-400km_rolling_30ma',
+    'temperature_deviation_avg_0-400km_rolling_50ma',
+    'temperature_deviation_avg_100-400km',
+    'temperature_deviation_avg_100-400km_rolling_30ma',
+    'temperature_deviation_avg_100-400km_rolling_50ma',
+    'temperature_deviation_avg_lab-120km',
+    'temperature_deviation_avg_lab-120km_rolling_30ma',
+    'temperature_deviation_avg_lab-120km_rolling_50ma',
+    'temperature_deviation_avg_lab-160km',
+    'temperature_deviation_avg_lab-160km_rolling_30ma',
+    'temperature_deviation_avg_lab-160km_rolling_50ma',
+    'temperature_deviation_avg_lab-200km',
+    'temperature_deviation_avg_lab-200km_rolling_30ma',
+    'temperature_deviation_avg_lab-200km_rolling_50ma',
+    'temperature_deviation_avg_lab-300km',
+    'temperature_deviation_avg_lab-300km_rolling_30ma',
+    'temperature_deviation_avg_lab-300km_rolling_50ma',
+    'temperature_deviation_avg_lab-400km',
+    'temperature_deviation_avg_lab-400km_rolling_30ma',
+    'temperature_deviation_avg_lab-400km_rolling_50ma',
+    'temperature_deviation_lambdas',
 ]
 
 @features.register_batch(
-    declares=[f"{fn.replace(' ', '_')}_delta" for fn in base_mantle_features if fn != 'Temperature_Deviation_Lambdas'],
+    declares=[_to_delta_name(fn) for fn in base_mantle_features],
     coords=snap_to_mantle,
     probe=False,
 )
@@ -1011,8 +1041,8 @@ def _mantle_variable_deltas(lons: np.ndarray, lats: np.ndarray, times: np.ndarra
     current = _base_mantle_features_depths(lons, lats, times)
     previous = _base_mantle_features_depths(offset_lons, offset_lats, offset_times)
     return pd.DataFrame({
-        f"{fn.replace(' ', '_')}_delta": current[fn].values - previous[fn].values
-        for fn in base_mantle_features if fn != 'Temperature_Deviation_Lambdas'
+        _to_delta_name(fn): (current[fn] - previous[fn]).values
+        for fn in base_mantle_features
     })
 
 

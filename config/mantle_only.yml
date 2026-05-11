@@ -2,7 +2,7 @@ all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  run_name: mantle_test                  # used as output directory name: outputs/{run_name}/
+  run_name: all_features                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: false
     plate_model_name: zahirovic2022
@@ -20,7 +20,7 @@ all_notebooks:
 
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age
-      enabled: false
+      enabled: true
       carbonate:
         enabled: false                # e.g. carbonate thickness
     crustal:                          # e.g. crustal thickness
