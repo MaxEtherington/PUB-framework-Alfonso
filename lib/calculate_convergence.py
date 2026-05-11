@@ -92,7 +92,7 @@ def run_calculate_convergence(
     else:
         from joblib import Parallel, delayed
 
-        with Parallel(nprocs, verbose=10 if verbose else 0) as parallel:
+        with Parallel(nprocs, prefer="threads", verbose=10 if verbose else 0) as parallel:
             data = parallel(
                 delayed(_parallel_func)(
                     plate_reconstruction=plate_reconstruction,
