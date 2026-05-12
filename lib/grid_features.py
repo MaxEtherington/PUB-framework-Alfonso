@@ -282,15 +282,18 @@ class GridFeatureRegistry:
     def compute_all(
         self,
         feature_names: list[str] | None = None,
+        verbose: bool = False,
     ) -> None:
         """Populate ``_results`` by sampling all registered features."""
         if feature_names is None:
             feature_names = self.available
         for name in feature_names:
+            if verbose:
+                print(f"Calculating feature '{name}'...")
             try:
                 self.get(name)
             except ValueError as e:
-                warnings.warn(f"Could not calculate feature '{name}': {e}", stacklevel=2)
+                warnings.warn(f"Could not calculate feature '{name}': {e}", stacklevel=3)
 
     def extract(
         self,
@@ -298,6 +301,7 @@ class GridFeatureRegistry:
         mantle_data_dir,
         plate_reconstruction,
         feature_names: list[str] | None = None,
+        verbose: bool = False,
     ) -> pd.DataFrame:
         """Extract all features for the given point data and context, returning a coregistered DataFrame."""
 
@@ -305,7 +309,7 @@ class GridFeatureRegistry:
         self.mantle_data_dir = mantle_data_dir
         self.plate_reconstruction = plate_reconstruction
 
-        self.compute_all(feature_names)
+        self.compute_all(feature_names, verbose=verbose)
 
         new_cols = [c for c in self._results.columns if c not in point_data.columns]
         return point_data.join(self._results[new_cols])
