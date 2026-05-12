@@ -4,6 +4,7 @@ workflow from PlateTectonicTools, allowing for parallelisation.
 import math
 import os
 import tempfile
+import copy
 import warnings
 from sys import stderr
 from typing import (
@@ -78,6 +79,9 @@ def run_calculate_convergence(
             rotation_model=rotation_filenames,
             topology_features=topology_filenames,
         )
+    elif plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
 
     times = np.arange(min_time, max_time + INCREMENT, INCREMENT)
     if nprocs == 1:

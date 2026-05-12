@@ -2,6 +2,7 @@
 time-dependent ocean plate raster data.
 """
 import os
+import copy
 import warnings
 from sys import stderr
 from typing import Optional, Sequence, Union
@@ -135,6 +136,10 @@ def run_coregister_ocean_rasters(
     if spreadrate_dir is None and agegrid_dir is not None:
         spreadrate_dir = agegrid_dir
 
+    if plate_reconstruction is not None and plate_reconstruction.plate_model is not None:
+        plate_reconstruction = copy.copy(plate_reconstruction)
+        plate_reconstruction.plate_model = None
+
     if nprocs == 1:
         out = _run_subset(
             times=times,
@@ -163,7 +168,7 @@ def run_coregister_ocean_rasters(
             df_array[i] = df
         input_data_split = np.array_split(df_array, nprocs)
 
-        with Parallel(nprocs, prefer="threads", verbose=int(verbose)) as parallel:
+        with Parallel(nprocs, verbose=int(verbose)) as parallel:
             results = parallel(
                 delayed(_run_subset)(
                     times=t,
