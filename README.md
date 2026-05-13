@@ -23,7 +23,7 @@ The workflow is designed in a modular fashion. The parameters of any classifier 
     - `00c-extract_grid_data.ipynb`
 3. Run these notebooks to train a PU classifier and create prospectivity maps and other plots:
     - `01a-select_features.ipynb`
-    - `01b-train_validate_classifiers.ipynb`
+    - `01b-validate_classifiers.ipynb`
     - `02-create_probability_maps.ipynb`
     - `03-create_probability_animations.ipynb`
     - `04-create_erosion_distribution.ipynb`

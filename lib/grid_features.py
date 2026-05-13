@@ -4,13 +4,13 @@ Provides decorator-based registration and sampling of gridded features
 at point locations (lon, lat, time).
 
 A valid feature is defined by a sampler function that takes arrays of longitudes,
-latitudes, and times as input and returns a pandas Series or DataFrame of sampled 
-values. Optionally, a coordinate resolver function can be provided to specify how 
-to obtain the coordinates for sampling (e.g., input present-day deposit coords vs 
+latitudes, and times as input and returns a pandas DataFrame of sampled values.
+Optionally, a coordinate resolver function can be provided to specify how to
+obtain the coordinates for sampling (e.g., input present-day deposit coords vs
 reconstructed to birth time).
 
 Registered features are cached in a DataFrame to avoid redundant sampling, and can
-be extracted for a given point dataset and context (e.g., mantle data directory, 
+be extracted for a given point dataset and context (e.g., set of mantle outputs,
 plate reconstruction) using the `extract` method.
 """
 import warnings
@@ -46,6 +46,7 @@ class GridFeatureRegistry:
         self._features: dict[str, GridFeature] = {}
         self._resolved_coordinates: dict[Callable, tuple] = {}
         self._results: pd.DataFrame | None = None
+        self._bracket_results: dict = {}
         self._mantle_dataset: xr.Dataset | None = None
         # Injected at runtime from notebook
         self._point_data: pd.DataFrame | None = None
@@ -66,6 +67,8 @@ class GridFeatureRegistry:
             if not df.equals(self._point_data):
                 warnings.warn("Overwriting existing point_data with new DataFrame. Resetting cached results.", stacklevel=2)
                 self._results = None
+                self._bracket_results = {}
+                self._resolved_coordinates = {}
         self._point_data = df
 
     @property
@@ -110,9 +113,6 @@ class GridFeatureRegistry:
         return self._mantle_dataset
 
     # ── Registration ──────────────────────────────────────────────────────────
-    # TODO: upgrade registration so that it wraps output functions such that,
-    # when run, they will use self.get() unless the coordinates provided do not match
-    # those previously in the function definition.
     def register(self, name: str, coords: Callable | None = None):
         """Decorator to register a grid feature sampler function."""
         def decorator(fn):
@@ -295,6 +295,75 @@ class GridFeatureRegistry:
             except ValueError as e:
                 warnings.warn(f"Could not calculate feature '{name}': {e}", stacklevel=3)
 
+    def validate_brackets(self, valid_times: np.ndarray, require_both: bool = True) -> None:
+        """Filter point_data to points that reconstruct successfully at floor and/or ceil timesteps.
+
+        For each point, compute the bracketing valid timesteps (floor ≤ age ≤ ceil) and attempt
+        reconstruction at both. Points where the bracket time exceeds local plate age are treated
+        as failures for that bracket without attempting reconstruction. Surviving points are kept
+        in self._point_data with a new boolean column 'bracket_infilled'; failed points are dropped.
+        Bracket reconstruction results are stored in self._bracket_results for future interpolation.
+        """
+        recon = self.plate_reconstruction
+        lons = self._point_data["present_lon"].values
+        lats = self._point_data["present_lat"].values
+        times = self._point_data["age (Ma)"].values
+
+        floor_times, ceil_times = _compute_floor_ceil_times(times, valid_times)
+        plate_ages = gpl.Points(recon, lons, lats, 0.0, age=None).age
+
+        plate_floor_valid = floor_times <= plate_ages
+        plate_ceil_valid = ceil_times <= plate_ages
+
+        rlons_floor, rlats_floor, recon_floor_mask = _try_reconstruct(lons, lats, floor_times)
+        rlons_ceil, rlats_ceil, recon_ceil_mask = _try_reconstruct(lons, lats, ceil_times)
+
+        floor_mask = plate_floor_valid & recon_floor_mask
+        ceil_mask = plate_ceil_valid & recon_ceil_mask
+
+        floor_only = floor_mask & ~ceil_mask
+        ceil_only = ~floor_mask & ceil_mask
+        neither = ~floor_mask & ~ceil_mask
+
+        if require_both:
+            drop_mask = neither | floor_only | ceil_only
+            infill_mask = np.zeros(len(times), dtype=bool)
+        else:
+            drop_mask = neither
+            infill_mask = floor_only | ceil_only
+            rlons_floor = np.where(floor_only, rlons_ceil, rlons_floor)
+            rlats_floor = np.where(floor_only, rlats_ceil, rlats_floor)
+            floor_times = np.where(floor_only, ceil_times, floor_times)
+            rlons_ceil = np.where(ceil_only, rlons_floor, rlons_ceil)
+            rlats_ceil = np.where(ceil_only, rlats_floor, rlats_ceil)
+            ceil_times = np.where(ceil_only, floor_times, ceil_times)
+
+        n_infilled = int(infill_mask.sum())
+        n_dropped = int(drop_mask.sum())
+        if n_infilled > 0:
+            infill_ages = times[infill_mask]
+            warnings.warn(
+                f"bracket_infilled: {n_infilled} point(s) had one bracket fail and were infilled "
+                f"(mean age {infill_ages.mean():.1f} Ma, range {infill_ages.min():.1f}–{infill_ages.max():.1f} Ma).",
+                stacklevel=2,
+            )
+        if n_dropped > 0:
+            drop_ages = times[drop_mask]
+            warnings.warn(
+                f"bracket_dropped: {n_dropped} point(s) failed reconstruction at both brackets and were removed "
+                f"(mean age {drop_ages.mean():.1f} Ma, range {drop_ages.min():.1f}–{drop_ages.max():.1f} Ma).",
+                stacklevel=2,
+            )
+
+        keep_mask = ~drop_mask
+        self._point_data = self._point_data[keep_mask].copy().reset_index(drop=True)
+        self._point_data["bracket_infilled"] = infill_mask[keep_mask]
+
+        self._bracket_results[_BRACKET_KEY] = {
+            "floor": (rlons_floor[keep_mask], rlats_floor[keep_mask], floor_times[keep_mask]),
+            "ceil": (rlons_ceil[keep_mask], rlats_ceil[keep_mask], ceil_times[keep_mask]),
+        }
+
     def extract(
         self,
         point_data,
@@ -302,17 +371,25 @@ class GridFeatureRegistry:
         plate_reconstruction,
         feature_names: list[str] | None = None,
         verbose: bool = False,
+        require_both_brackets: bool | None = True,
     ) -> pd.DataFrame:
-        """Extract all features for the given point data and context, returning a coregistered DataFrame."""
+        """Extract all features for the given point data and context, returning a coregistered DataFrame.
 
+        If require_both_brackets is True or False, bracket validation runs before sampling and filters
+        point_data to only reconstructable points. Pass None to skip validation (e.g. synthetic grids).
+        """
         self.point_data = point_data
         self.mantle_data_dir = mantle_data_dir
         self.plate_reconstruction = plate_reconstruction
 
+        if require_both_brackets is not None:
+            valid_times = self.mantle_dataset["time"].values
+            self.validate_brackets(valid_times, require_both=require_both_brackets)
+
         self.compute_all(feature_names, verbose=verbose)
 
-        new_cols = [c for c in self._results.columns if c not in point_data.columns]
-        return point_data.join(self._results[new_cols])
+        new_cols = [c for c in self._results.columns if c not in self._point_data.columns]
+        return self._point_data.join(self._results[new_cols])
 
     def reset(self):
         """Clear cached results."""
@@ -379,11 +456,12 @@ class GridFeatureRegistry:
 
 
 features = GridFeatureRegistry()
+_BRACKET_KEY = object()  # sentinel for _bracket_results — independent of any resolver
 
 
-# ==================
+# ==========================================================================================
 # Coordinate resolvers
-# ==================
+# ==========================================================================================
 
 def _snap_to_valid_times(
     times: np.ndarray,
@@ -393,6 +471,44 @@ def _snap_to_valid_times(
     valid_times = np.sort(valid_times)
     midpoints = (valid_times[:-1] + valid_times[1:]) / 2
     return valid_times[np.digitize(times, midpoints)]
+
+
+def _compute_floor_ceil_times(
+    times: np.ndarray,
+    valid_times: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (floor_times, ceil_times) bracketing each value in times.
+
+    Floor is the largest valid time ≤ times[i]; ceil is the smallest ≥ times[i].
+    For exact hits both are equal. Values outside the valid range are clamped to
+    the nearest endpoint (caller is responsible for further validity checks).
+    """
+    vt = np.sort(valid_times)
+    idx = np.searchsorted(vt, times, side="left")
+    floor_idx = np.clip(idx - 1, 0, len(vt) - 1)
+    ceil_idx = np.clip(idx, 0, len(vt) - 1)
+    return vt[floor_idx], vt[ceil_idx]
+
+
+def _try_reconstruct(
+    present_lons: np.ndarray,
+    present_lats: np.ndarray,
+    snap_times: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Attempt reconstruction; return (rlons, rlats, success_mask).
+
+    success_mask is bool of original length; rlons/rlats are NaN where False.
+    """
+    recon = features.plate_reconstruction
+    points = gpl.Points(recon, present_lons, present_lats, 0.0, age=snap_times)
+    rlons_s, rlats_s, point_indices = points.reconstruct_to_birth_age(snap_times, return_point_indices=True)
+    success_mask = np.zeros(len(present_lons), dtype=bool)
+    success_mask[point_indices] = True
+    rlons = np.full(len(present_lons), np.nan)
+    rlats = np.full(len(present_lons), np.nan)
+    rlons[point_indices] = rlons_s
+    rlats[point_indices] = rlats_s
+    return rlons, rlats, success_mask
 
 
 def _snap_and_reconstruct_points(
@@ -422,8 +538,12 @@ def _snap_and_reconstruct_points(
     points = gpl.Points(recon, present_lons, present_lats, 0.0, age=snapped_times)
     rlons, rlats, point_indices = points.reconstruct_to_birth_age(snapped_times, return_point_indices=True)
 
-    if present_lons.size != point_indices.size or present_lats.size != point_indices.size:
-        raise RuntimeError("Reconstruction output arrays have inconsistent sizes.")
+    if present_lons.size != point_indices.size:
+        warnings.warn(
+            f"Reconstruction unexpectedly dropped {present_lons.size - point_indices.size} point(s) "
+            "after bracket pre-filtering. Results may be misaligned.",
+            stacklevel=3,
+        )
 
     if return_point_indices:
         return rlons, rlats, snapped_times, point_indices
@@ -440,13 +560,14 @@ def snap_to_plate_model(
     lons, lats, times = features.point_data[["present_lon", "present_lat", "age (Ma)"]].values.T
     min_time, max_time = features.valid_time_window
     valid_times = np.arange(int(min_time), int(max_time) + 1, 1)
-    _, _, times = _snap_and_reconstruct_points(
+    _, _, times, point_indices = _snap_and_reconstruct_points(
         present_lons=lons,
         present_lats=lats,
         times=times,
         valid_times=valid_times,
+        return_point_indices=True,
     )
-    return lons, lats, times
+    return lons[point_indices], lats[point_indices], times
 
 
 def snap_to_mantle(
@@ -474,15 +595,15 @@ def snap_to_mantle_present(
     - present_lons, present_lats, times: arrays of present-day longitudes, latitudes, and snapped birth times for points that successfully reconstruct.
     """
     present_lons, present_lats, times = features.point_data[["present_lon", "present_lat", "age (Ma)"]].values.T
-    min_time, max_time = features.valid_time_window
     valid_times = features.mantle_dataset["time"].values
-    _, _, times = _snap_and_reconstruct_points(
+    _, _, times, point_indices = _snap_and_reconstruct_points(
         present_lons=present_lons,
         present_lats=present_lats,
         times=times,
         valid_times=valid_times,
+        return_point_indices=True,
     )
-    return present_lons, present_lats, times
+    return present_lons[point_indices], present_lats[point_indices], times
 
 
 def reconstructed(
@@ -538,9 +659,9 @@ def _offset_coordinates_by_time(
         return offset_lons, offset_lats, previous_times
 
 
-# ===========================
+# ==========================================================================================
 # Naming helpers
-# ===========================
+# ==========================================================================================
 
 def _lab_suffix(offset_km: float) -> str:
     """Return LAB-offset column suffix: '_lab' for offset 0, '_lab+Nkm' otherwise."""
@@ -555,9 +676,9 @@ def _to_delta_name(col: str) -> str:
     return f"{col}_delta"
 
 
-# ===========================
+# ==========================================================================================
 # Batch-register mantle vars
-# ===========================
+# ==========================================================================================
 
 unit_conversion_mapping = {
     "kelvin": "K",
@@ -735,9 +856,9 @@ def _base_mantle_features_LAB(
     return pd.concat(results, axis=1)
 
 
-# ==================
+# ==========================================================================================
 # Feature definitions
-# ==================
+# ==========================================================================================
 
 
 @features.register_batch(declares=["east_plate_velocity (cm/yr)", "north_plate_velocity (cm/yr)"], coords=snap_to_plate_model)
@@ -922,9 +1043,9 @@ def _temperature_lambdas(
 
     return result
 
-# ==================
+# ==========================================================================================
 # Feature transforms
-# ==================
+# ==========================================================================================
 
 # Feature transforms accept a feature and registers a new feature based on it.
 
@@ -954,9 +1075,9 @@ def _feature_LAB_depth_averages(
     return result_df
 
 
-# ===========================
+# ==========================================================================================
 # Register derivative features
-# ===========================
+# ==========================================================================================
 
 
 # LAB offsets

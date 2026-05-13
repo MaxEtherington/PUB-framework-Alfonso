@@ -104,7 +104,7 @@ Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.
 - **`calculate_convergence.py`**: subduction convergence extraction wrapping `ptt.subduction_convergence`.
 - **`combine_point_data.py`**: combines deposit and unlabelled point data.
 - **`generate_unlabelled_points.py`**: generates random unlabelled points within study area polygons.
-- **`coregister_combined_point_data.py`**: joins point data to subduction zone kinematics via haversine nearest-neighbour.
+- **`coregister_combined_point_data.py`**: joins point data to subduction zone kinematics via KNN-averaged haversine nearest-neighbour sampling.
 - **`coregister_crustal_thickness.py`**: joins points to time-dependent crustal thickness rasters.
 - **`coregister_ocean_rasters.py`**: joins subduction zone kinematic data to time-dependent ocean plate rasters (seafloor age, spreading rate, sediment thickness, carbonate thickness, crustal CO2) via plate-ID-masked haversine nearest-neighbour sampling.
 - **`create_plate_maps.py`**: rasterises topological plate models to netCDF.
