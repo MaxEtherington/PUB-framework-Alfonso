@@ -8,7 +8,6 @@ paths:
 
 ## Critical
 
-- **Never edit notebook files directly.** Always edit `nb_scripts/*.py` — the `PostToolUse` hook in `.claude/settings.json` automatically runs `jupytext --sync` after each edit.
 - All feature sampler functions **must** accept exactly `(lons, lats, times)` as positional arrays (`np.ndarray`) and return `pd.Series` or `pd.DataFrame`.
 - Features registered with `@features.register` must return a **`pd.Series`** (single column). Features returning multiple columns **must** use `@features.register_batch`.
 - The module-level singleton `features` (imported from `lib/grid_features.py`) is the only registry — never instantiate a new `GridFeatureRegistry`.
@@ -116,7 +115,7 @@ Verify: the feature you depend on is registered *before* yours in the file (or i
 ruff check lib/ --fix
 ```
 
-The `PostToolUse` hook handles jupytext sync automatically — no manual sync needed after editing `lib/grid_features.py`.
+Run `ruff check lib/ --fix` after editing `lib/grid_features.py`.
 
 ## Examples
 

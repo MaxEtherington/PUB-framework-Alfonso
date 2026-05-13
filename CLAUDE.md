@@ -13,7 +13,7 @@ conda env create --file environment.yml   # env named 'prospectivity'
 conda activate prospectivity
 ```
 
-Python 3.13. Key deps: `gplately`, `pygplates`, `pulearn`, `xarray`, `scikit-learn`, `papermill`, `geopandas`, `cartopy`, `jupytext`, `ruff`.
+Python 3.13. Key deps: `gplately`, `pygplates`, `pulearn`, `xarray`, `scikit-learn`, `papermill`, `geopandas`, `cartopy`, `ruff`.
 
 ## Running the pipeline
 
@@ -40,11 +40,11 @@ Read `config/thesis.mplstyle` before creating or modifying any plot. All style d
 ## Linting
 
 ```bash
-ruff check lib/          # lint lib/ (excludes nb_scripts/, submodules/)
+ruff check lib/          # lint lib/ (excludes submodules/)
 ruff check lib/ --fix    # auto-fix
 ```
 
-Config in `ruff.toml`: Python 3.13, line-length 120. Ignores `E501` (line length), `E741` (ambiguous names), `F401` (unused imports). `nb_scripts/`, `submodules/`, `playground/` are excluded. The `.ruff_cache/` directory (containing `CACHEDIR.TAG`) is auto-generated and not committed to version control.
+Config in `ruff.toml`: Python 3.13, line-length 120. Ignores `E501` (line length), `E741` (ambiguous names), `F401` (unused imports). `submodules/`, `playground/` are excluded. The `.ruff_cache/` directory (containing `CACHEDIR.TAG`) is auto-generated and not committed to version control.
 
 A `PostToolUse` hook automatically runs `ruff check` after any `Edit` or `Write` to `lib/*.py` files.
 
@@ -67,19 +67,6 @@ A `PostToolUse` hook automatically runs `ruff check` after any `Edit` or `Write`
 
 This workflow always uses `use_extracted_data: true` and runs `00a`–`00c` to generate data. The Zenodo fallback (`data_prepared/`) and `zenodo.org/record/14010839` are upstream holdovers.
 
-## Notebook ↔ script sync
-
-`jupytext.toml` keeps `*.ipynb` and `nb_scripts/*.py` (percent format) in sync.
-
-**Always edit `nb_scripts/*.py` — never `.ipynb` files directly.**
-
-Syncing is automatic: a `FileChanged` hook in `.claude/settings.json` runs `jupytext --sync` when `nb_scripts/*.py` files are saved. A `PreToolUse` guard in `.claude/settings.json` blocks direct `.ipynb` editing. No manual sync step is needed when Claude edits these files.
-
-To sync manually (e.g. after editing outside Claude Code):
-```bash
-jupytext --sync nb_scripts/<notebook>.py
-```
-
 ## Configuration system
 
 Config YAMLs live in `config/`. Active config written to `config/.run_config.yml` (gitignored); snapshot saved to `output/{run_name}/config_snapshot.yml`.
@@ -100,7 +87,7 @@ Key parameters:
 - `grid_resolution`: degrees (notebook_00c, default `0.5`)
 - `n_jobs`: parallelism via `joblib`
 
-Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`, `config/zahirovic_baseline.yml`, `config/mantle_only.yml`.
+Existing configs: `config/notebook_parameters_default.yml`, `config/mantle_test.yml`, `config/cache_test.yml`, `config/mantle_only.yml`, `config/all_features.yml`, `config/plates_only.yml`.
 
 ## Architecture
 

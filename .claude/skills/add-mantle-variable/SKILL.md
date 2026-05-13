@@ -8,7 +8,6 @@ paths:
 
 ## Critical
 
-- **Never edit notebook files directly.** Edit `nb_scripts/*.py` — the `PostToolUse` hook in `.claude/settings.json` automatically runs `jupytext --sync` after each edit.
 - All variables live in `lib/mantle_variables.py`. The module-level singleton `variables = MantleVariableRegistry()` must be the target of every registration call.
 - Every `@variables.register` function **must** call `.rename("VariableName")` on the returned `xr.DataArray` and set the returned array's `.attrs` with at least `"long_name"` (and `"units"` where applicable).
 - Use `variables.get("ExistingVar", ds)` (not `ds["ExistingVar"]`) to retrieve any previously registered variable inside a derived function — this triggers caching and derived-variable computation.
@@ -126,11 +125,7 @@ variables.register_derived("MyDerivedVar", "my_transform", var_name="Temperature
 
 Verify: `"my_transform" in variables._transforms` and `"MyDerivedVar" in variables.available`.
 
-### Step 6 — Sync notebooks if a variable is referenced there
-
-If a script in `nb_scripts/*.py` references the new variable, edit only the script. The `PostToolUse` hook automatically runs `jupytext --sync` after the edit — no manual sync needed.
-
-### Step 7 — Lint
+### Step 6 — Lint
 
 ```bash
 ruff check lib/mantle_variables.py

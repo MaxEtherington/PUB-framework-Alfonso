@@ -9,7 +9,6 @@ paths:
 
 ## Critical
 
-- **Never edit notebook files directly.** All notebook logic lives in `nb_scripts/*.py`. The `PostToolUse` hook in `.claude/settings.json` automatically runs `jupytext --sync` after any edit.
 - `--config` is required for every run except `--list-defaults`.
 - Config shorthand is resolved relative to `config/`: `notebook_parameters_default` expands to `config/notebook_parameters_default.yml`.
 - The active config is written to `config/.run_config.yml` (gitignored) before notebooks execute — this file must exist for notebooks to run.

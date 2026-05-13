@@ -3,17 +3,6 @@
     "commit-commands@claude-plugins-official": true
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -c \"\nimport sys, json\ndata = json.load(sys.stdin)\nfp = data.get('tool_input', {}).get('file_path', '')\nif fp.endswith('.ipynb'):\n    print('ERROR: Do not edit .ipynb files directly. Edit nb_scripts/*.py and run jupytext --sync instead.', file=sys.stderr)\n    sys.exit(1)\n\""
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -22,11 +11,6 @@
             "type": "command",
             "command": "python3 -c \"\nimport sys, json, subprocess\ndata = json.load(sys.stdin)\nfp = data.get('tool_input', {}).get('file_path', '')\nif '/lib/' in fp and fp.endswith('.py') and not fp.endswith('__init__.py'):\n    result = subprocess.run(['conda', 'run', '-n', 'prospectivity', 'ruff', 'check', fp], capture_output=True, text=True)\n    if result.stdout:\n        print(result.stdout)\n\" 2>/dev/null || true",
             "statusMessage": "Running ruff..."
-          },
-          {
-            "type": "command",
-            "command": "python3 -c \"\nimport sys, json, subprocess\ndata = json.load(sys.stdin)\nfp = data.get('tool_input', {}).get('file_path', '')\nif '/nb_scripts/' in fp and fp.endswith('.py'):\n    subprocess.run(['conda', 'run', '-n', 'prospectivity', 'jupytext', '--sync', fp], capture_output=True)\n\" 2>/dev/null || true",
-            "statusMessage": "Syncing notebook..."
           }
         ]
       },
