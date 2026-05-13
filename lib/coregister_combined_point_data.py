@@ -25,6 +25,7 @@ def run_coregister_combined_point_data(
     subduction_data: _PathOrDataFrame,
     output_filename: Optional[_PathLike] = None,
     n_jobs: int = 1,
+    n_neighbors: int = 1,
     verbose: bool = False,
 ) -> pd.DataFrame:
     """Join point data to subduction zone data.
@@ -39,6 +40,11 @@ def run_coregister_combined_point_data(
         If provided, write the joined data to a CSV file.
     n_jobs : int
         Number of processes to use.
+    n_neighbors : int, default: 1
+        Number of nearest trench points to average when assigning subduction
+        features. Categorical columns (plate IDs) always use the single
+        nearest neighbour. ``distance_to_trench (km)`` is always the
+        distance to the closest point.
     verbose : bool, default: False
         Print log to stderr.
 
@@ -77,6 +83,7 @@ def run_coregister_combined_point_data(
                 szs=subduction_data[
                     subduction_data["age (Ma)"] == int(np.around(time))
                 ],
+                n_neighbors=n_neighbors,
             )
             for time in times
         )
@@ -113,6 +120,7 @@ def coregister_combined_point_data(
     time: float,
     points: pd.DataFrame,
     szs: pd.DataFrame,
+    n_neighbors: int = 1,
 ) -> pd.DataFrame:
     """Coregister datasets at a give time.
 
@@ -123,6 +131,9 @@ def coregister_combined_point_data(
         Point dataset.
     szs : DataFrame
         Subduction zone dataset.
+    n_neighbors : int, default: 1
+        Number of nearest trench points to average. See
+        :func:`run_coregister_combined_point_data` for details.
     """
     points = points.copy()
     szs = szs.copy().reset_index()
@@ -146,15 +157,21 @@ def coregister_combined_point_data(
     neigh.fit(coords_data)
 
     distances, indices = neigh.kneighbors(
-        coords_points, n_neighbors=1, return_distance=True
+        coords_points, n_neighbors=n_neighbors, return_distance=True
     )
-    # distances = np.rad2deg(distances).flatten()
-    distances = distances.flatten() * EARTH_RADIUS
-    indices = indices.flatten()
+    # distances shape: (N_points, n_neighbors); keep nearest for distance_to_trench
+    distances_nearest = distances[:, 0] * EARTH_RADIUS
 
-    for column in columns_to_add:
-        for i_points, i_szs in zip(points.index, indices):
-            points.at[i_points, column] = szs.at[i_szs, column]
-    points["distance_to_trench (km)"] = distances
+    categorical_cols = {c for c in columns_to_add if c.endswith("_ID")}
+    numeric_cols = columns_to_add - categorical_cols
+
+    for i_enum, i_points in enumerate(points.index):
+        neighbor_rows = szs.iloc[indices[i_enum]]
+        for column in numeric_cols:
+            points.at[i_points, column] = neighbor_rows[column].mean()
+        for column in categorical_cols:
+            points.at[i_points, column] = szs.iloc[indices[i_enum, 0]][column]
+
+    points["distance_to_trench (km)"] = distances_nearest
 
     return points
