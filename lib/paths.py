@@ -64,6 +64,7 @@ class PathConfigManager():
         self.GRID_DATA_PATH = self.POINTS_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
+        self.SELECTED_FEATURES_PATH = self.OUTPUT_DIR / 'selected_features.csv'
 
         # Create active feature set list, paths, filenames
         # Feature sets group related features by source data; each can be enabled/disabled in the config

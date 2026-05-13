@@ -88,7 +88,7 @@ font.weight        : normal
 axes.labelsize     : 8
 axes.labelweight   : normal
 axes.titlesize     : 10
-axes.titleweight   : semibold
+axes.titleweight   : normal
 xtick.labelsize    : 7
 ytick.labelsize    : 7
 
