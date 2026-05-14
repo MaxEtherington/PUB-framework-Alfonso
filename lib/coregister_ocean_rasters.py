@@ -51,6 +51,7 @@ def run_coregister_ocean_rasters(
     subducted_sediments_dir: Optional[_PathLike] = None,
     subducted_carbonates_dir: Optional[_PathLike] = None,
     subducted_water_dir: Optional[_PathLike] = None,
+    seafloor_smoothing_radius: float = 3.0,
     verbose: bool = False,
 ) -> pd.DataFrame:
     """Join time-dependent subduction zone data to raster data.
@@ -97,6 +98,10 @@ def run_coregister_ocean_rasters(
         Directory containing cumulative subducted carbonates raster data.
     subducted_water_dir : str, optional
         Directory containing cumulative subducted water raster data.
+    seafloor_smoothing_radius : float, default: 3.0
+        Haversine radius in degrees used to spatially smooth `seafloor_age`
+        and `seafloor_spreading_rate` on trench tessellation points before
+        co-registration. Set to 0 to disable smoothing.
     verbose : bool, default: False
         Print log to stderr.
 
@@ -203,9 +208,64 @@ def run_coregister_ocean_rasters(
     #     method="nearest",
     # )
 
+    if seafloor_smoothing_radius > 0:
+        out = smooth_seafloor_features(
+            out,
+            columns=["seafloor_age (Ma)", "seafloor_spreading_rate (km/Myr)"],
+            radius_deg=seafloor_smoothing_radius,
+        )
+
     if combined_filename is not None:
         out.to_csv(combined_filename, index=False)
     return out
+
+
+def smooth_seafloor_features(
+    data: pd.DataFrame,
+    columns: list,
+    radius_deg: float = 3.0,
+) -> pd.DataFrame:
+    """Spatially smooth scalar seafloor features on trench tessellation points.
+
+    For each time step and subducting plate, replaces each point's value with
+    the mean of all trench points within `radius_deg` (haversine). Points with
+    no neighbours within the radius retain their original value.
+    """
+    data = data.copy()
+    radius_rad = np.deg2rad(radius_deg)
+    present_cols = [c for c in columns if c in data.columns]
+    if not present_cols:
+        return data
+
+    for time in data["age (Ma)"].unique():
+        time_mask = data["age (Ma)"] == time
+        time_data = data[time_mask]
+
+        for plate_id in time_data["subducting_plate_ID"].unique():
+            plate_mask = time_mask & (data["subducting_plate_ID"] == plate_id)
+            subset = data[plate_mask]
+            if len(subset) < 2:
+                continue
+
+            coords = np.deg2rad(
+                np.column_stack([subset["lat"].values, subset["lon"].values])
+            )
+            neigh = NearestNeighbors(metric="haversine")
+            neigh.fit(coords)
+            neighbor_indices = neigh.radius_neighbors(
+                coords, radius=radius_rad, return_distance=False
+            )
+
+            idx = subset.index
+            for col in present_cols:
+                values = subset[col].values
+                smoothed = np.array([
+                    values[nbrs].mean() if len(nbrs) > 0 else values[i]
+                    for i, nbrs in enumerate(neighbor_indices)
+                ])
+                data.loc[idx, col] = smoothed
+
+    return data
 
 
 def _run_subset(

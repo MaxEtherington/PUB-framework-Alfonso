@@ -53,6 +53,7 @@ notebook_00b:
   regions_filename:
   deposits_filename:
   num_unlabelled: 200
+  seafloor_smoothing_radius: 3.0
 
 notebook_00c:
   n_jobs:
