@@ -433,6 +433,10 @@ def format_feature_name(s, bold=False):
         "(/Ps)": r"($\mathrm{{Ps}^{-1}}$)",
         "(/s)": r"($\mathrm{{s}^{-1}}$)",
         "(rad/Ps)": r"($\mathrm{rad. \; {Ps}^{-1}}$)",
+
+        "lab ": "LAB ",
+        "_lab_": "_LAB_",
+        "lab_": "LAB_",
     }
     if bold:
         replace = {
