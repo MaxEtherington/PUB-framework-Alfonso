@@ -26,7 +26,12 @@ import pint_xarray  # noqa
 import gplately as gpl
 
 import lib.mantle_variables as mv  # noqa
-from .mantle_variables import variables, sample_mantle_var, sample_mantle_var_depths, sample_LAB_depths, calculate_lambdas
+from .mantle_variables import (
+    variables,
+    sample_mantle_var, sample_mantle_var_interp,
+    sample_LAB_depths_interp,
+    calculate_lambdas,
+)
 
 # ==================
 # Grid feature registry
@@ -310,6 +315,17 @@ class GridFeatureRegistry:
         times = self._point_data["age (Ma)"].values
 
         floor_times, ceil_times = _compute_floor_ceil_times(times, valid_times)
+
+        # Degenerate case: times[i] == min(valid_times) gives floor == ceil == min.
+        # Shift ceil to the next older step so the bracket spans a non-zero interval.
+        exact_hit = floor_times == ceil_times
+        if exact_hit.any():
+            sorted_vt = np.sort(valid_times)
+            hit_idx = np.searchsorted(sorted_vt, ceil_times[exact_hit], side="left")
+            next_idx = np.clip(hit_idx + 1, 0, len(sorted_vt) - 1)
+            ceil_times = ceil_times.copy()
+            ceil_times[exact_hit] = sorted_vt[next_idx]
+
         plate_ages = gpl.Points(recon, lons, lats, 0.0, age=None).age
 
         plate_floor_valid = floor_times <= plate_ages
@@ -359,9 +375,12 @@ class GridFeatureRegistry:
         self._point_data = self._point_data[keep_mask].copy().reset_index(drop=True)
         self._point_data["bracket_infilled"] = infill_mask[keep_mask]
 
+        t_span = ceil_times[keep_mask] - floor_times[keep_mask]
+        alpha = np.where(t_span > 0, (times[keep_mask] - floor_times[keep_mask]) / t_span, 0.0)
         self._bracket_results[_BRACKET_KEY] = {
             "floor": (rlons_floor[keep_mask], rlats_floor[keep_mask], floor_times[keep_mask]),
             "ceil": (rlons_ceil[keep_mask], rlats_ceil[keep_mask], ceil_times[keep_mask]),
+            "alpha": alpha,
         }
 
     def extract(
@@ -459,6 +478,21 @@ features = GridFeatureRegistry()
 _BRACKET_KEY = object()  # sentinel for _bracket_results — independent of any resolver
 
 
+def _get_bracket() -> dict:
+    """Return the current bracket results, raising RuntimeError if not yet computed.
+
+    Bracket results are populated by validate_brackets(). Call features.validate_brackets(valid_times)
+    before sampling any mantle feature, or use features.extract(...) which does this automatically.
+    """
+    if _BRACKET_KEY not in features._bracket_results:
+        raise RuntimeError(
+            "Mantle bracket results are not populated. "
+            "Call features.validate_brackets(valid_times) before sampling mantle features, "
+            "or use features.extract(...) which handles this automatically."
+        )
+    return features._bracket_results[_BRACKET_KEY]
+
+
 # ==========================================================================================
 # Coordinate resolvers
 # ==========================================================================================
@@ -479,9 +513,11 @@ def _compute_floor_ceil_times(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (floor_times, ceil_times) bracketing each value in times.
 
-    Floor is the largest valid time ≤ times[i]; ceil is the smallest ≥ times[i].
-    For exact hits both are equal. Values outside the valid range are clamped to
-    the nearest endpoint (caller is responsible for further validity checks).
+    For non-minimum values, an exact hit on a valid timestep naturally gives
+    floor < times[i] == ceil (floor is bumped one step down). The only degenerate
+    case is times[i] == min(valid_times), where both clip to the minimum — resolved
+    in validate_brackets by shifting ceil to the next older step.
+    Values outside the valid range are clamped; caller handles further validity checks.
     """
     vt = np.sort(valid_times)
     idx = np.searchsorted(vt, times, side="left")
@@ -685,13 +721,18 @@ unit_conversion_mapping = {
     "meter / second": "cm/yr",
 }
 
-@features.register_batch(declares="Base_Mantle_Features", coords=snap_to_mantle, probe=False)
+@features.register_batch(declares="Base_Mantle_Features", coords=reconstructed, probe=False)
 def _base_mantle_features_depths(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
 ) -> pd.DataFrame:
-    """Sample a suite of basic mantle features at requested coordinates."""
+    """Sample a suite of basic mantle features using bracket interpolation."""
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    alpha = bracket["alpha"]
+
     depths_to_sample = [100, 200, 300, 400]
     results = []
 
@@ -740,22 +781,15 @@ def _base_mantle_features_depths(
 
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
-        kwargs = {
-            "da": da,
-            "lons": lons,
-            "lats": lats,
-            "times": times,
-            "depths": depths_to_sample,
-            "method": "linear",
-        }
-
-        result = sample_mantle_var_depths(**kwargs) if "depth" in da.dims else sample_mantle_var(**kwargs)
-
         units = da.attrs.get("units", "unitless")
-        to_units = units
-        if units in unit_conversion_mapping.keys():
-            to_units = unit_conversion_mapping[units]
-            da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+        to_units = unit_conversion_mapping.get(units, units)
+
+        result = sample_mantle_var_interp(
+            da, floor_lons, floor_lats, floor_times,
+            ceil_lons, ceil_lats, ceil_times, alpha,
+            depths=depths_to_sample if "depth" in da.dims else None,
+        )
+
         clean_var = var.lower().replace("_cg", "")
         # Rename columns to include variable name and depth if applicable
         if len(result.columns) == len(depths_to_sample):  # Sampled across depths
@@ -770,13 +804,18 @@ def _base_mantle_features_depths(
     return pd.concat(results, axis=1)
 
 
-@features.register_batch(declares="Base_Mantle_Features_LAB", coords=snap_to_mantle, probe=False)
+@features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
 def _base_mantle_features_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
     times: np.ndarray,
 ) -> pd.DataFrame:
-    """Sample a suite of basic mantle features at requested coordinates, starting from the LAB."""
+    """Sample a suite of basic mantle features at LAB depth using bracket interpolation."""
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    alpha = bracket["alpha"]
+
     offsets_to_sample = [0, 40, 80, 120]
     results = []
 
@@ -826,18 +865,18 @@ def _base_mantle_features_LAB(
     for var in vars_to_sample:
         da = variables.get(var, features.mantle_dataset)
         units = da.attrs.get("units", "unitless")
-        to_units = units
-        if units in unit_conversion_mapping.keys():
-            to_units = unit_conversion_mapping[units]
+        to_units = unit_conversion_mapping.get(units, units)
+        if to_units != units:
             da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+
         new_columns = []
         for offset in offsets_to_sample:
-            result = sample_LAB_depths(
+            result = sample_LAB_depths_interp(
                 ds=features.mantle_dataset,
                 da=da,
-                lons=lons,
-                lats=lats,
-                times=times,
+                floor_lons=floor_lons, floor_lats=floor_lats, floor_times=floor_times,
+                ceil_lons=ceil_lons,   ceil_lats=ceil_lats,   ceil_times=ceil_times,
+                alpha=alpha,
                 offset_km=offset,
             )
             new_columns.append(result)
@@ -934,17 +973,20 @@ def _relative_tangential_velocity_LAB(
 
     offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB
 ) -> pd.DataFrame:
-    """Sample relative tangential velocity between plate and mantle at requested coordinates."""
+    """Sample relative tangential velocity between plate and mantle using bracket interpolation."""
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    alpha = bracket["alpha"]
 
     def _fetch_tangential_velocity_at_LAB(var):
         da = variables.get(var, features.mantle_dataset)
         da = da.pint.quantify().pint.to("cm/yr").pint.dequantify()
-        return sample_LAB_depths(
-            ds = features.mantle_dataset,
-            da = da,
-            lons=lons,
-            lats=lats,
-            times=times,
+        return sample_LAB_depths_interp(
+            ds=features.mantle_dataset, da=da,
+            floor_lons=floor_lons, floor_lats=floor_lats, floor_times=floor_times,
+            ceil_lons=ceil_lons,   ceil_lats=ceil_lats,   ceil_times=ceil_times,
+            alpha=alpha,
             offset_km=offset_km,
         ).to_numpy()
 
@@ -1022,26 +1064,26 @@ def _relative_velocity_in_plate_frame(
     return result
 
 
-@features.register_batch("Temperature_Deviation_Lambdas", coords=snap_to_mantle)
-def _temperature_lambdas(
-    lons: np.ndarray,
-    lats: np.ndarray,
-    times: np.ndarray,
+# @features.register_batch("Temperature_Deviation_Lambdas", coords=snap_to_mantle)
+# def _temperature_lambdas(
+#     lons: np.ndarray,
+#     lats: np.ndarray,
+#     times: np.ndarray,
 
-    n_lambdas: int = 5,
-) -> pd.DataFrame:
-    """Calculate the first `n_lambdas` polynomial regression coefficients of the mantle geotherm."""
+#     n_lambdas: int = 5,
+# ) -> pd.DataFrame:
+#     """Calculate the first `n_lambdas` polynomial regression coefficients of the mantle geotherm."""
 
-    result = calculate_lambdas(
-        da=variables.get("Temperature_Deviation_CG", features.mantle_dataset),
-        times=times,
-        lats=lats,
-        lons=lons,
-        depth_range=(0, 400),
-        n_lambdas=n_lambdas
-    )
+#     result = calculate_lambdas(
+#         da=variables.get("Temperature_Deviation_CG", features.mantle_dataset),
+#         times=times,
+#         lats=lats,
+#         lons=lons,
+#         depth_range=(0, 400),
+#         n_lambdas=n_lambdas
+#     )
 
-    return result
+#     return result
 
 # ==========================================================================================
 # Feature transforms
@@ -1090,7 +1132,8 @@ for LAB_offset in LAB_offsets:
             f"mantle_relative_north_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
             f"mantle_relative_speed{_lab_suffix(LAB_offset)} (cm/yr)",
         ],
-        coords=snap_to_mantle
+        coords=reconstructed,
+        probe=False,
     )(partial(_relative_tangential_velocity_LAB, offset_km=LAB_offset))
 
     # Register plate-relative tangential velocity features at the LAB
@@ -1099,7 +1142,8 @@ for LAB_offset in LAB_offsets:
             f"relative_velocity_parallel_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
             f"relative_velocity_transverse_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
         ],
-        coords=snap_to_mantle
+        coords=reconstructed,
+        probe=False,
     )(partial(_relative_velocity_in_plate_frame, offset_km=LAB_offset))
 
 # Register depth averages of mantle-relative velocity components
@@ -1108,7 +1152,7 @@ features.register_batch(
         f"mantle_relative_east_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
         f"mantle_relative_north_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
         f"mantle_relative_speed_LAB_{LAB_offset}km_avg (cm/yr)"
-    ], coords=snap_to_mantle
+    ], coords=reconstructed, probe=False,
     )(partial(_feature_LAB_depth_averages, sampler=_relative_tangential_velocity_LAB, offset_depths=LAB_offsets)
 )
 
@@ -1116,7 +1160,7 @@ features.register_batch(
     declares=[
         f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
         f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
-    ], coords=snap_to_mantle
+    ], coords=reconstructed, probe=False,
     )(partial(
         _feature_LAB_depth_averages, sampler=_relative_velocity_in_plate_frame,
         offset_depths=LAB_offsets
@@ -1160,29 +1204,47 @@ base_mantle_features = [
 #     'temperature_deviation_cg_lambda_4 (K)',
 ]
 
+# Maps base_mantle_features column names → mantle variable registry keys for delta sampling.
+_base_mantle_col_to_var: dict[str, str] = {
+    'lab_depth (km)':                              'LAB_Depth',
+    '1000k_isotherm_depth (km)':                   '1000K_Isotherm_Depth',
+    'sublithospheric_cold_anomaly_thickness (km)': 'Sublithospheric_Cold_Anomaly_Thickness',
+    'cold_anomaly_magnitude (K)':                  'Cold_Anomaly_Magnitude',
+}
+
 @features.register_batch(
     # declares=[_to_delta_name(fn) for fn in base_mantle_features],
     declares=["Base_Mantle_Deltas"],
-    coords=snap_to_mantle,
+    coords=reconstructed,
     probe=False,
 )
 def _mantle_variable_deltas(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
-    offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
-    current = _base_mantle_features_depths(lons, lats, times)
-    previous = _base_mantle_features_depths(offset_lons, offset_lats, offset_times)
-    return pd.DataFrame({
-        _to_delta_name(fn): (current[fn] - previous[fn]).values
-        for fn in base_mantle_features
-    })
+    """Compute per-Ma gradient of base mantle variables from the pre-computed bracket."""
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    t_span = ceil_times - floor_times
+
+    ds = features.mantle_dataset
+    frames = []
+    for fn in base_mantle_features:
+        var_name = _base_mantle_col_to_var[fn]
+        da = variables.get(var_name, ds)
+        v_floor = sample_mantle_var(da, floor_lons, floor_lats, floor_times)
+        v_ceil  = sample_mantle_var(da, ceil_lons,  ceil_lats,  ceil_times)
+        safe_span = np.where(t_span > 0, t_span, np.nan)
+        gradient = (v_ceil.values - v_floor.values) / safe_span[:, None]
+        frames.append(pd.DataFrame(gradient, columns=[_to_delta_name(fn)]))
+    return pd.concat(frames, axis=1)
 
 
 # @features.register_batch(
 #     declares="Temperature_Deviation_Lambdas_delta",
-#     coords=snap_to_mantle,
+#     coords=reconstructed,
 #     probe=False,
 # )
 # def _temperature_lambdas_delta(lons: np.ndarray, lats: np.ndarray, times: np.ndarray) -> pd.DataFrame:
-#     offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(snap_to_mantle, n_timesteps=1)
+#     offset_lons, offset_lats, offset_times = _offset_coordinates_by_time(reconstructed, n_timesteps=1)
 #     current = _temperature_lambdas(lons, lats, times)
 #     previous = _temperature_lambdas(offset_lons, offset_lats, offset_times)
 #     delta_df = current.subtract(previous.values)

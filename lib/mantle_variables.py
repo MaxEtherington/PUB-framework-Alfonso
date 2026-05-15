@@ -138,12 +138,13 @@ def _average_over_LAB_depth(
         raise ValueError(f"'{var_name}' has no 'depth' dimension.")
 
     lab_depth = variables.get("LAB_Depth", ds)
-    da = da.where((da.depth >= lab_depth) & (da.depth <= lab_depth + offset)).mean(dim="depth")
+    result = da.where((da.depth >= lab_depth) & (da.depth <= lab_depth + offset)).mean(dim="depth")
+    result.attrs = {**da.attrs, "long_name": f"{result.attrs.get('long_name', var_name)} averaged from LAB to {offset}km below"}
     if name_suffix is not None:
         name = f"{da.name}{name_suffix}"
     else:
         name = f"{var_name}_avg_LAB_{int(offset)}km"
-    return da.rename(name)
+    return result.rename(name)
 
 
 @variables.register_transform("average_over_rolling_time")
@@ -158,8 +159,9 @@ def _average_over_rolling_time(
         raise ValueError(f"'{var_name}' has no 'time' dimension.")
 
     da = da.sortby("time", ascending=False)  # Ensure time (Ma) decreases so rolling average looks backward
-    da = da.rolling(time=window_size, center=True, min_periods=1).mean()
-    return da.rename(f"{var_name}_rolling_{window_size}Ma")
+    result = da.rolling(time=window_size, center=True, min_periods=1).mean()
+    result.attrs = {**da.attrs, "long_name": f"{result.attrs.get('long_name', var_name)} rolling average over {window_size} Ma"}
+    return result.rename(f"{var_name}_rolling_{window_size}Ma")
 
 
 @variables.register_transform("contour_depth")
@@ -589,6 +591,31 @@ def sample_mantle_var_depths(
     return result
 
 
+def sample_mantle_var_interp(
+    da: xr.DataArray,
+    floor_lons: ArrayLike,
+    floor_lats: ArrayLike,
+    floor_times: ArrayLike,
+    ceil_lons: ArrayLike,
+    ceil_lats: ArrayLike,
+    ceil_times: ArrayLike,
+    alpha: np.ndarray,
+    depths: ArrayLike | None = None,
+) -> pd.DataFrame:
+    """Sample da at bracket positions and linearly interpolate to actual age.
+
+    alpha = (actual_time - floor_time) / (ceil_time - floor_time), pre-computed
+    by validate_brackets. Pass depths to broadcast over depth levels.
+    """
+    if depths is None:
+        v_floor = sample_mantle_var(da, floor_lons, floor_lats, floor_times)
+        v_ceil  = sample_mantle_var(da, ceil_lons,  ceil_lats,  ceil_times)
+    else:
+        v_floor = sample_mantle_var_depths(da, floor_lons, floor_lats, floor_times, depths)
+        v_ceil  = sample_mantle_var_depths(da, ceil_lons,  ceil_lats,  ceil_times,  depths)
+    return v_floor + alpha[:, None] * (v_ceil.values - v_floor.values)
+
+
 def sample_LAB_depths(
     ds: xr.Dataset,
     da: xr.DataArray,
@@ -629,6 +656,24 @@ def sample_LAB_depths(
         ]
 
     return result
+
+
+def sample_LAB_depths_interp(
+    ds: xr.Dataset,
+    da: xr.DataArray,
+    floor_lons: ArrayLike,
+    floor_lats: ArrayLike,
+    floor_times: ArrayLike,
+    ceil_lons: ArrayLike,
+    ceil_lats: ArrayLike,
+    ceil_times: ArrayLike,
+    alpha: np.ndarray,
+    offset_km: float = 0.0,
+) -> pd.DataFrame:
+    """Sample da at LAB depth using bracket interpolation."""
+    v_floor = sample_LAB_depths(ds, da, floor_times, floor_lats, floor_lons, offset_km)
+    v_ceil  = sample_LAB_depths(ds, da, ceil_times,  ceil_lats,  ceil_lons,  offset_km)
+    return v_floor + alpha[:, None] * (v_ceil.values - v_floor.values)
 
 
 def calculate_lambdas(
