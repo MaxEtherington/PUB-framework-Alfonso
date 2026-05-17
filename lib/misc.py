@@ -433,8 +433,11 @@ def format_feature_name(s, bold=False):
         "(/Ps)": r"($\mathrm{{Ps}^{-1}}$)",
         "(/s)": r"($\mathrm{{s}^{-1}}$)",
         "(rad/Ps)": r"($\mathrm{rad. \; {Ps}^{-1}}$)",
+        "(K/timestep)": r"($\mathrm{K \; {Myr}^{-1}}$)",
+        "(km/timestep)": r"($\mathrm{km \; {Myr}^{-1}}$)",
 
-        "lab ": "LAB ",
+        "ma ": "Myr ",
+        "Lab ": "LAB ",
         "_lab_": "_LAB_",
         "lab_": "LAB_",
     }
