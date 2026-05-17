@@ -56,7 +56,7 @@ A `PostToolUse` hook automatically runs `ruff check` after any `Edit` or `Write`
 | `00b` | Extract training data (deposit points) |
 | `00c` | Extract grid data (regular grid for maps) |
 | `01a` | Select features for classifier |
-| `01b` | Train and validate PU classifiers (PU + SVM, regional models) |
+| `01b` | Tune hyperparameters, train, and validate PU classifiers (PU + SVM, regional models) |
 | `02a` | Create prospectivity probability maps |
 | `02b` | Area recall analysis |
 | `03` | Create probability animations |
