@@ -211,7 +211,13 @@ def run_coregister_ocean_rasters(
     if seafloor_smoothing_radius > 0:
         out = smooth_seafloor_features(
             out,
-            columns=["seafloor_age (Ma)", "seafloor_spreading_rate (km/Myr)"],
+            columns=[
+                "seafloor_age (Ma)",
+                "seafloor_spreading_rate (km/Myr)",
+                "sediment_thickness (m)",
+                "carbonate_thickness (m)",
+                "crustal_carbon_density (t/m^2)",
+            ],
             radius_deg=seafloor_smoothing_radius,
         )
 
