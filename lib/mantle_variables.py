@@ -300,7 +300,7 @@ def _radial_tangential_ratio(ds: xr.Dataset) -> xr.DataArray:
     return da.rename("Radial_Tangential_Ratio")
 
 
-# @variables.register("LAB_Depth_Terraced")
+@variables.register("LAB_Depth_Terraced")
 def _LAB_depth(ds: xr.Dataset) -> xr.DataArray:
     if "Lithosphere_Indicator" not in ds:
         raise ValueError("Dataset must contain 'Lithosphere_Indicator' variable to calculate LAB depth.")
@@ -591,6 +591,99 @@ def sample_mantle_var_depths(
     return result
 
 
+def _make_per_point_depths(
+    ref_depths: np.ndarray,
+    slice_size: float,
+    n_depth_samples: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build per-point depth sample arrays for profile extraction.
+
+    Returns:
+        depths_flat : (N*S,) absolute depths for RGI query
+        offsets     : (S,) relative offsets from reference, km
+    """
+    offsets = np.linspace(0.0, slice_size, n_depth_samples)     # (S,)
+    depths_2d = ref_depths[:, None] + offsets[None, :]          # (N, S) via broadcasting
+    return depths_2d.ravel(), offsets
+
+
+def sample_mantle_var_depth_profile(
+    da: xr.DataArray,
+    lons: ArrayLike,
+    lats: ArrayLike,
+    times: ArrayLike,
+    ref_depths: np.ndarray,
+    slice_size: float,
+    n_depth_samples: int,
+    method: str = "linear",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample `da` along a per-point depth profile.
+
+    For each point i, depths are sampled at ref_depths[i] + linspace(0, slice_size, S).
+
+    Returns:
+        profiles : (N, S) float array — sampled values
+        offsets  : (S,) float array — depth offsets from reference, km
+    """
+    lons = np.asarray(lons, dtype=float)
+    lats = np.asarray(lats, dtype=float)
+    times = np.asarray(times, dtype=float)
+
+    depths_flat, offsets = _make_per_point_depths(ref_depths, slice_size, n_depth_samples)
+    lons_flat = np.repeat(lons, n_depth_samples)
+    lats_flat = np.repeat(lats, n_depth_samples)
+    times_flat = np.repeat(times, n_depth_samples)
+
+    result = _do_interp_cyclic_lon(
+        da, lons_flat, lats_flat, times_flat, depths_flat,
+        broadcast_depth=False,
+        method=method,
+    )
+    profiles = result.values.reshape(len(ref_depths), n_depth_samples)
+    return profiles, offsets
+
+
+def sample_mantle_var_depth_profile_interp(
+    da: xr.DataArray,
+    floor_lons: ArrayLike,
+    floor_lats: ArrayLike,
+    floor_times: ArrayLike,
+    ceil_lons: ArrayLike,
+    ceil_lats: ArrayLike,
+    ceil_times: ArrayLike,
+    alpha: np.ndarray,
+    ref_depths_floor: np.ndarray,
+    ref_depths_ceil: np.ndarray,
+    slice_size: float,
+    n_depth_samples: int,
+    method: str = "linear",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sample depth profiles at both brackets and linearly interpolate.
+
+    ref_depths_floor and ref_depths_ceil must be pre-computed by the caller
+    (e.g. by interpolating LAB_Depth at bracket coords) so that a single LAB
+    interpolation covers all variables sharing the same reference.
+
+    Floor and ceil profiles are sampled on different absolute depth grids
+    (ref_floor + offsets vs ref_ceil + offsets) before blending on the shared
+    offset axis — consistent with all other temporal interpolation in this codebase.
+
+    Returns:
+        profiles : (N, S) float array — alpha-blended profiles
+        offsets  : (S,) float array — depth offsets from reference, km
+    """
+    floor_profiles, offsets = sample_mantle_var_depth_profile(
+        da, floor_lons, floor_lats, floor_times,
+        ref_depths_floor, slice_size, n_depth_samples, method,
+    )
+    ceil_profiles, _ = sample_mantle_var_depth_profile(
+        da, ceil_lons, ceil_lats, ceil_times,
+        ref_depths_ceil, slice_size, n_depth_samples, method,
+    )
+    profiles = floor_profiles + alpha[:, None] * (ceil_profiles - floor_profiles)
+    return profiles, offsets
+
+
 def sample_mantle_var_interp(
     da: xr.DataArray,
     floor_lons: ArrayLike,
@@ -626,7 +719,7 @@ def sample_LAB_depths(
 ) -> pd.DataFrame:
     """
     Sample mantle variable at the depth of the lithosphere-asthenosphere boundary.
-    
+
     `offset_km` allows sampling at a fixed depth below the LAB (positive) or above it (negative).
     """
 
