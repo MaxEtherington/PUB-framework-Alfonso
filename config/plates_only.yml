@@ -16,7 +16,7 @@ all_notebooks:
   regions_filename: "regions.geojson" # optional regions file, saved in data/
   
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
-  study_zone_buffer: 9.0 # degrees    # radius around reference_feature for unlabelled point generation
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
 
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age

@@ -2,7 +2,7 @@ all_notebooks:
   # These parameters will be applied to all notebooks.
   # If one of these parameters also appears in the corresponding
   # notebook section, it can be specified there on a per-notebook basis.
-  run_name: all_features                  # used as output directory name: outputs/{run_name}/
+  run_name: mantle_only                  # used as output directory name: outputs/{run_name}/
   plate_model:
     use_provided_plate_model: false
     plate_model_name: zahirovic2022
@@ -16,11 +16,11 @@ all_notebooks:
   regions_filename: "regions.geojson" # optional regions file, saved in data/
   
   reference_feature: trenches         # geometry used to define study area and unlabelled sampling
-  study_zone_buffer: 9.0 # degrees    # radius around reference_feature for unlabelled point generation
+  study_zone_buffer: 6.0 # degrees    # radius around reference_feature for unlabelled point generation
 
   feature_sets:
     subduction:                       # e.g. distance to trench, slab age
-      enabled: true
+      enabled: false
       carbonate:
         enabled: false                # e.g. carbonate thickness
     crustal:                          # e.g. crustal thickness
