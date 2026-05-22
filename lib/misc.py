@@ -420,6 +420,9 @@ def format_feature_name(s, bold=False):
     s = s.replace("_", " ")
     s = s[0].capitalize() + s[1:]
 
+    s = re.sub(r"(?<!\()\bma\b(?!\))", "Myr", s, flags=re.IGNORECASE)
+    s = re.sub(r"\blab\b", "LAB", s, flags=re.IGNORECASE)
+
     replace = {
         "(cm/yr)": r"($\mathrm{cm \; {yr}^{-1}}$)",
         "(m)": r"($\mathrm{m}$)",
@@ -435,11 +438,6 @@ def format_feature_name(s, bold=False):
         "(rad/Ps)": r"($\mathrm{rad. \; {Ps}^{-1}}$)",
         "(K/timestep)": r"($\mathrm{K \; {Myr}^{-1}}$)",
         "(km/timestep)": r"($\mathrm{km \; {Myr}^{-1}}$)",
-
-        "ma ": "Myr ",
-        "Lab ": "LAB ",
-        "_lab_": "_LAB_",
-        "lab_": "LAB_",
     }
     if bold:
         replace = {
