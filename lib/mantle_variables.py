@@ -170,6 +170,7 @@ def _calculate_contour_depth(
     var_name: str,
     target_contour: float,
     first_crossing: bool = True,
+    nth_crossing: int | None = None,
 ) -> xr.DataArray:
     # --- Validate ---
     try:
@@ -192,15 +193,25 @@ def _calculate_contour_depth(
     horiz_shape = arr.shape[1:]                                       # e.g. (T, lat, lon)
     arr_2d = arr.reshape(arr.shape[0], -1)                            # (D, N)
 
-    # --- Find first sign-change along depth for each column ---
+    # --- Resolve effective crossing index ---
+    if nth_crossing is None:
+        nth_crossing = 0 if first_crossing else -1
+
+    # --- Find nth sign-change along depth for each column ---
     diff = arr_2d - target_contour                                    # (D, N)
     sign_changes = np.diff(np.sign(diff), axis=0) != 0                # (D-1, N)
-    has_crossing = sign_changes.any(axis=0)                           # (N,)
-    if first_crossing:
-        idx = sign_changes.argmax(axis=0)                              # (N,)
+
+    n_needed = nth_crossing + 1 if nth_crossing >= 0 else -nth_crossing
+    has_crossing = sign_changes.sum(axis=0) >= n_needed               # (N,)
+
+    if nth_crossing >= 0:
+        cumsum = sign_changes.cumsum(axis=0)                          # (D-1, N)
+        idx = np.argmax(cumsum == nth_crossing + 1, axis=0)           # (N,)
     else:
-        # Flip along depth, find first True (= last in original), map index back
-        idx = (sign_changes.shape[0] - 1) - np.flip(sign_changes, axis=0).argmax(axis=0)
+        sign_flipped = np.flip(sign_changes, axis=0)
+        cumsum_flipped = sign_flipped.cumsum(axis=0)
+        idx_flipped = np.argmax(cumsum_flipped == -nth_crossing, axis=0)
+        idx = (sign_changes.shape[0] - 1) - idx_flipped
 
     # --- Linear interpolation to exact crossing depth ---
     col = np.arange(arr_2d.shape[1])
@@ -212,7 +223,12 @@ def _calculate_contour_depth(
 
     # --- Reshape back and wrap in DataArray ---
     coords = {d: da.coords[d] for d in extra_dims if d in da.coords}
-    crossing_label = "first" if first_crossing else "last"
+    if nth_crossing == 0:
+        crossing_label = "first"
+    elif nth_crossing == -1:
+        crossing_label = "last"
+    else:
+        crossing_label = f"nth={nth_crossing}"
     return xr.DataArray(
         depth_crossing.reshape(horiz_shape),
         dims=extra_dims,
@@ -327,18 +343,92 @@ def _LAB_depth_contour(ds: xr.Dataset) -> xr.DataArray:
     return da.rename("LAB_Depth_Contour")
 
 
-@variables.register("1000K_Isotherm_Depth")
-def _1000K_isotherm_depth(ds: xr.Dataset) -> xr.DataArray:
-    da = _calculate_contour_depth(ds, "FullTemperature_CG", target_contour=1000)
-    da.attrs = {"long_name": "depth to 1000K isotherm", "units": "km"}
-    return da.rename("1000K_Isotherm_Depth")
+def _compute_slab_crossings(
+    ds: xr.Dataset,
+    target_contour: float = 1000.0,
+    contour_var: str = "Temperature_CG",
+) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray]:
+    """Compute the three temperature crossings needed for slab geometry, caching results in ds.
+
+    Returns:
+        c1: first crossing in full mantle (base of lithosphere / LAB proxy)
+        c2: second crossing in upper mantle ≤410 km (slab top); NaN where no slab present
+        c3: third crossing in full mantle (slab bottom); NaN-filled to CMB where slab has no exit
+    """
+    cache_prefix = f"_slab_cross_{int(target_contour)}_{contour_var}"
+    c1_key, c2_key, c3_key = f"{cache_prefix}_1", f"{cache_prefix}_2", f"{cache_prefix}_3"
+    if c1_key in ds:
+        return ds[c1_key], ds[c2_key], ds[c3_key]
+
+    c1 = _calculate_contour_depth(ds.sel(depth=slice(2900, 0)), contour_var,
+                                   target_contour=target_contour, nth_crossing=0)
+    c2 = _calculate_contour_depth(ds.sel(depth=slice(410, 0)),  contour_var,
+                                   target_contour=target_contour, nth_crossing=1)
+    c3 = _calculate_contour_depth(ds.sel(depth=slice(2900, 0)), contour_var,
+                                   target_contour=target_contour, nth_crossing=2)
+
+    lab = variables.get("LAB_Depth", ds)
+    has_2nd = ~c2.isnull()
+    cmb_depth = float(ds.depth.max())  # depth is descending; max = deepest ≈ 2900 km
+
+    # Slab enters upper mantle but temperature never recovers → extend to CMB
+    c3 = xr.where(c3.isnull() & has_2nd, cmb_depth, c3)
+    # No cold anomaly at all → anchor first crossing at LAB so arithmetic stays defined
+    c1 = c1.fillna(lab)
+
+    for key, arr in [(c1_key, c1), (c2_key, c2), (c3_key, c3)]:
+        ds[key] = arr
+    return c1, c2, c3
+
+
+@variables.register("Slab_Top_Depth")
+def _slab_top_depth(ds: xr.Dataset) -> xr.DataArray:
+    c1, c2, c3 = _compute_slab_crossings(ds)
+    lab = variables.get("LAB_Depth", ds)
+    has_2nd = ~c2.isnull()
+    da = xr.where(has_2nd, c2, lab)
+    da.attrs = {
+        "long_name": "slab top depth (1000 K Temperature_CG 2nd crossing / LAB)",
+        "units": "km",
+    }
+    return da.rename("Slab_Top_Depth")
+
+
+@variables.register("Slab_Bottom_Depth")
+def _slab_bottom_depth(ds: xr.Dataset) -> xr.DataArray:
+    c1, c2, c3 = _compute_slab_crossings(ds)
+    lab = variables.get("LAB_Depth", ds)
+    has_2nd = ~c2.isnull()
+    da = xr.where(has_2nd, c3, np.maximum(c1, lab))
+    da.attrs = {
+        "long_name": "slab bottom depth (1000 K Temperature_CG 3rd crossing / 1st crossing)",
+        "units": "km",
+    }
+    return da.rename("Slab_Bottom_Depth")
+
+
+@variables.register("Slab_Thickness")
+def _slab_thickness(ds: xr.Dataset) -> xr.DataArray:
+    da = variables.get("Slab_Bottom_Depth", ds) - variables.get("Slab_Top_Depth", ds)
+    da.attrs = {"long_name": "slab thickness (1000 K Temperature_CG)", "units": "km"}
+    return da.rename("Slab_Thickness")
 
 
 @variables.register("Sublithospheric_Cold_Anomaly_Thickness")
-def _slab_depth(ds: xr.Dataset) -> xr.DataArray:
-    da = variables.get("LAB_Depth", ds) - variables.get("1000K_Isotherm_Depth", ds)
-    da.attrs = {"long_name": "thickness of sub-lithospheric cold anomaly", "units": "km"}
+def _sublithospheric_cold_anomaly_thickness(ds: xr.Dataset) -> xr.DataArray:
+    da = variables.get("Slab_Bottom_Depth", ds) - variables.get("LAB_Depth", ds)
+    da.attrs = {
+        "long_name": "sublithospheric cold anomaly thickness (1000 K Temperature_CG)",
+        "units": "km",
+    }
     return da.rename("Sublithospheric_Cold_Anomaly_Thickness")
+
+
+@variables.register("Mantle_Wedge_Thickness")
+def _mantle_wedge_thickness(ds: xr.Dataset) -> xr.DataArray:
+    da = variables.get("Slab_Top_Depth", ds) - variables.get("LAB_Depth", ds)
+    da.attrs = {"long_name": "mantle wedge thickness (1000 K Temperature_CG)", "units": "km"}
+    return da.rename("Mantle_Wedge_Thickness")
 
 
 @variables.register("Cold_Anomaly_Magnitude")

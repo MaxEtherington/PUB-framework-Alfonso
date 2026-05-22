@@ -13,10 +13,11 @@ Registered features are cached in a DataFrame to avoid redundant sampling, and c
 be extracted for a given point dataset and context (e.g., set of mantle outputs,
 plate reconstruction) using the `extract` method.
 """
+import re as _re
 import warnings
 from dataclasses import dataclass
 from typing import Callable
-from functools import partial
+# from functools import partial
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -29,8 +30,14 @@ import lib.mantle_variables as mv  # noqa
 from .mantle_variables import (
     variables,
     sample_mantle_var, sample_mantle_var_interp,
+    sample_mantle_var_depth_profile,
     sample_LAB_depths_interp,
-    calculate_lambdas,
+)
+from .depth_profile_stats import (
+    DEPTH_PROFILE_STATS,
+    DEPTH_PROFILE_VAR_UNITS,
+    compute_depth_profile_stats,
+    profile_stat_column_names,
 )
 
 # ==================
@@ -51,7 +58,9 @@ class GridFeatureRegistry:
         self._features: dict[str, GridFeature] = {}
         self._resolved_coordinates: dict[Callable, tuple] = {}
         self._results: pd.DataFrame | None = None
+        self._profile_cache: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {}
         self._bracket_results: dict = {}
+        self._raw_profile_cache: dict[tuple[float, float], dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]] = {}
         self._mantle_dataset: xr.Dataset | None = None
         # Injected at runtime from notebook
         self._point_data: pd.DataFrame | None = None
@@ -411,66 +420,193 @@ class GridFeatureRegistry:
         return self._point_data.join(self._results[new_cols])
 
     def reset(self):
-        """Clear cached results."""
+        """Clear cached results, profile cache, bracket results, and resolved coordinates."""
         self._results = None
+        self._profile_cache = {}
+        self._bracket_results = {}
+        self._resolved_coordinates = {}
 
     # ── Plotting ─────────────────────────────────────────────────────────────
 
-    def grid_sample(self, feature_names: list[str] | str, times: list[float] | float) -> xr.Dataset:
-        """Sample a feature on a regular global grid at a specified time."""
+    def grid_sample(
+        self,
+        feature_names: list[str] | str | None = None,
+        times: list[float] | float = 0.0,
+        resolution: float = 1.0,
+        save_path: str | None = None,
+    ) -> xr.Dataset:
+        """Sample registered features on a regular global grid at one or more times.
+
+        Points are reconstructed from 0 Ma to the bracket floor/ceil endpoints using
+        plate motion — done once per unique bracket pair regardless of how many times
+        share that bracket. Feature values are then blended with the appropriate alpha
+        per time step, so the result correctly reflects where each plate region was in
+        the mantle reference frame at each requested time.
+
+        Args:
+            feature_names: Feature name(s) to sample. Defaults to all registered features.
+            times: Reconstruction time(s) in Ma.
+            resolution: Grid spacing in degrees (default 1°).
+            save_path: If given, write the result to this path as NetCDF.
+
+        Returns:
+            xr.Dataset with dimensions (time, lat, lon). Variable names have units
+            stripped; units are stored as the ``units`` DataArray attribute and the
+            full column name as ``long_name``.
+        """
         if isinstance(feature_names, str):
             feature_names = [feature_names]
+        if feature_names is None:
+            feature_names = list(self._features.keys())
         if isinstance(times, float | int):
-            times = [times]
+            times = [float(times)]
 
         old_point_data = self._point_data.copy() if self._point_data is not None else None
-        old_results = self._results.copy() if self._results is not None else None
+        old_results    = self._results.copy()    if self._results    is not None else None
 
-        lons = np.arange(-180, 180, 1)
-        lats = np.arange(-90, 91, 1)
-        grid_lons, grid_lats = np.meshgrid(lons, lats)
-        flat_lons = grid_lons.flatten()
-        flat_lats = grid_lats.flatten()
+        lons = np.arange(-180, 180, resolution)
+        lats = np.arange(-90, 90 + resolution, resolution)
+        flat_lons, flat_lats = np.meshgrid(lons, lats)
+        flat_lons = flat_lons.flatten()
+        flat_lats = flat_lats.flatten()
+        N = len(flat_lons)
 
-        plate_ages = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats, age=None).age
+        valid_mantle_times = self.mantle_dataset["time"].values
+        times_arr = np.array(times, dtype=float)
+        floor_arr, ceil_arr = _compute_floor_ceil_times(times_arr, valid_mantle_times)
 
-        time_slices = {name: [] for name in feature_names}
+        bracket_groups: dict[tuple[float, float], list[float]] = {}
+        for t, ft, ct in zip(times, floor_arr, ceil_arr):
+            bracket_groups.setdefault((float(ft), float(ct)), []).append(float(t))
+
+        self._raw_profile_cache = {}
+        time_slices: dict[str, dict[float, np.ndarray]] = {name: {} for name in feature_names}
 
         try:
-            for time in times:
-                self.reset()
-                mask = plate_ages >= time
-                valid_indices = np.nonzero(mask)[0]
+            for (floor_t, ceil_t), group_times in bracket_groups.items():
 
-                self._point_data = pd.DataFrame({
-                    "lon": flat_lons[valid_indices],
-                    "lat": flat_lats[valid_indices],
-                    "age (Ma)": np.full(len(valid_indices), float(time)),
-                    "present_lon": flat_lons[valid_indices],
-                    "present_lat": flat_lats[valid_indices],
-                })
+                # ── Step 1: plate-reconstruction filter (once per bracket group) ──────
+                # Reconstruct 0 Ma grid to ceil_t; ceil_idx = points with valid plates.
+                if ceil_t == 0.0:
+                    ceil_idx = np.arange(N)
+                    ceil_rlons_s = flat_lons.copy()
+                    ceil_rlats_s = flat_lats.copy()
+                else:
+                    gpts_ceil = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats, age=0)
+                    ceil_rlons_s, ceil_rlats_s, ceil_idx = gpts_ceil.reconstruct(
+                        ceil_t, return_array=True, return_point_indices=True)
 
-                for name in feature_names:
-                    result = self.get(name)
-                    da = np.full(len(flat_lons), np.nan, dtype=np.float32)
-                    da[valid_indices] = result.values
-                    time_slices[name].append(da.reshape(len(lats), len(lons)))
+                valid_flat_lons = flat_lons[ceil_idx]
+                valid_flat_lats = flat_lats[ceil_idx]
+                M = len(ceil_idx)
+
+                if floor_t == 0.0:
+                    floor_rlons_valid = valid_flat_lons.copy()
+                    floor_rlats_valid = valid_flat_lats.copy()
+                else:
+                    gpts_floor = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats, age=0)
+                    floor_rlons_s, floor_rlats_s, floor_idx = gpts_floor.reconstruct(
+                        floor_t, return_array=True, return_point_indices=True)
+                    floor_rlons_full = np.full(N, np.nan)
+                    floor_rlats_full = np.full(N, np.nan)
+                    floor_rlons_full[floor_idx] = floor_rlons_s
+                    floor_rlats_full[floor_idx] = floor_rlats_s
+                    floor_rlons_valid = floor_rlons_full[ceil_idx]
+                    floor_rlats_valid = floor_rlats_full[ceil_idx]
+
+                # ── Step 2: snap-to-plate-model filter (once per bracket group) ───────
+                # Find which of the M ceil-valid points also survive snap_to_plate_model.
+                # Pre-cache the result so the feature sampler never re-calls the resolver,
+                # guaranteeing that plate velocity uses the exact same point set as the
+                # profile cache (preventing shape mismatch in _cache_plate_relative_profiles).
+                if self._valid_time_window is not None:
+                    min_t, max_t = self._valid_time_window
+                    plate_valid_times = np.arange(int(min_t), int(max_t) + 1, 1)
+                    _, _, snap_times_full, snap_pidx = _snap_and_reconstruct_points(
+                        valid_flat_lons, valid_flat_lats,
+                        np.full(M, group_times[0]), plate_valid_times,
+                        return_point_indices=True,
+                    )
+                    snap_times_m2     = snap_times_full[snap_pidx]
+                    final_lons        = valid_flat_lons[snap_pidx]
+                    final_lats        = valid_flat_lats[snap_pidx]
+                    M2                = len(snap_pidx)
+                    combined_idx      = ceil_idx[snap_pidx]
+                    floor_rlons_final = floor_rlons_valid[snap_pidx]
+                    floor_rlats_final = floor_rlats_valid[snap_pidx]
+                    ceil_rlons_final  = ceil_rlons_s[snap_pidx]
+                    ceil_rlats_final  = ceil_rlats_s[snap_pidx]
+                else:
+                    snap_times_m2     = None
+                    plate_valid_times = None
+                    final_lons        = valid_flat_lons
+                    final_lats        = valid_flat_lats
+                    M2                = M
+                    combined_idx      = ceil_idx
+                    floor_rlons_final = floor_rlons_valid
+                    floor_rlats_final = floor_rlats_valid
+                    ceil_rlons_final  = ceil_rlons_s
+                    ceil_rlats_final  = ceil_rlats_s
+
+                # ── Step 3: per-time sampling ─────────────────────────────────────────
+                for time in group_times:
+                    self.reset()  # clears _results, _profile_cache, _bracket_results,
+                                  # _resolved_coordinates; does NOT clear _raw_profile_cache
+
+                    alpha_val = ((time - floor_t) / (ceil_t - floor_t)
+                                 if ceil_t != floor_t else 0.0)
+
+                    self._point_data = pd.DataFrame({
+                        "lon":         final_lons,
+                        "lat":         final_lats,
+                        "age (Ma)":    np.full(M2, time),
+                        "present_lon": final_lons,
+                        "present_lat": final_lats,
+                    })
+
+                    self._bracket_results[_BRACKET_KEY] = {
+                        "floor": (floor_rlons_final, floor_rlats_final, np.full(M2, floor_t)),
+                        "ceil":  (ceil_rlons_final,  ceil_rlats_final,  np.full(M2, ceil_t)),
+                        "alpha": np.full(M2, alpha_val),
+                    }
+
+                    # Pre-populate snap_to_plate_model resolver cache so all features
+                    # that use it see the same M2 points as the profile cache.
+                    if snap_times_m2 is not None:
+                        snapped_t = float(_snap_to_valid_times(np.array([time]), plate_valid_times)[0])
+                        self._resolved_coordinates[snap_to_plate_model] = (
+                            final_lons, final_lats, np.full(M2, snapped_t),
+                        )
+
+                    for name in feature_names:
+                        result = self.get(name)
+                        full = np.full(N, np.nan)
+                        full[combined_idx] = result.values
+                        time_slices[name][time] = full.reshape(len(lats), len(lons))
+
         finally:
             self._point_data = old_point_data
-            self._results = old_results
+            self._results    = old_results
+            self._raw_profile_cache = {}
 
-        ds = xr.Dataset(
-            {
-                name: xr.DataArray(
-                    np.stack(time_slices[name], axis=0),
-                    coords={"time": times, "lat": lats, "lon": lons},
-                    dims=["time", "lat", "lon"],
-                    name=name,
-                )
-                for name in feature_names
-            }
-        )
+        time_coord = [float(t) for t in times]
+        ds = xr.Dataset({
+            _strip_units(name): xr.DataArray(
+                np.stack([time_slices[name][t] for t in time_coord], axis=0),
+                coords={"time": time_coord, "lat": lats, "lon": lons},
+                dims=["time", "lat", "lon"],
+                attrs={"units": _extract_units(name), "long_name": name},
+            )
+            for name in feature_names
+        })
 
+        mantle_time = self.mantle_dataset["time"]
+        for attr in ("units", "calendar"):
+            if attr in mantle_time.attrs:
+                ds["time"].attrs[attr] = mantle_time.attrs[attr]
+
+        if save_path is not None:
+            ds.to_netcdf(save_path)
         return ds
 
 
@@ -603,7 +739,7 @@ def snap_to_plate_model(
         valid_times=valid_times,
         return_point_indices=True,
     )
-    return lons[point_indices], lats[point_indices], times
+    return lons[point_indices], lats[point_indices], times[point_indices]
 
 
 def snap_to_mantle(
@@ -664,7 +800,7 @@ def _offset_coordinates_by_time(
     """
     Resolve coordinates by reconstructing points to a different time step.
     By default, resolves coordinates backwards.
-    To resolve forwards, use a negative time_offset and set n_timesteps to 
+    To resolve forwards, use a negative time_offset and set n_timesteps to
     the number of steps forward to resolve.
     """
     present_lons, present_lats = features.point_data[["present_lon", "present_lat"]].values.T
@@ -699,16 +835,30 @@ def _offset_coordinates_by_time(
 # Naming helpers
 # ==========================================================================================
 
+_UNITS_RE = _re.compile(r'\s*\(([^)]*)\)\s*$')
+
+
+def _strip_units(col: str) -> str:
+    """Return the column name without the trailing ' (units)' suffix."""
+    return _UNITS_RE.sub("", col).strip()
+
+
+def _extract_units(col: str) -> str:
+    """Return the units string from a ' (units)' suffix, or '' if absent."""
+    m = _UNITS_RE.search(col)
+    return m.group(1) if m else ""
+
+
 def _lab_suffix(offset_km: float) -> str:
     """Return LAB-offset column suffix: '_lab' for offset 0, '_lab+Nkm' otherwise."""
     return "_lab" if offset_km == 0 else f"_lab+{int(offset_km)}km"
 
 
 def _to_delta_name(col: str) -> str:
-    """'foo_bar (km)' → 'foo_bar_delta (km/timestep)'."""
+    """'foo_bar (km)' → 'foo_bar_delta (km/Myr)'."""
     if " (" in col:
         name, _, units = col.rpartition(" (")
-        return f"{name}_delta ({units[:-1]}/timestep)"
+        return f"{name}_delta ({units[:-1]}/Myr)"
     return f"{col}_delta"
 
 
@@ -739,9 +889,9 @@ def _base_mantle_features_depths(
     vars_to_sample = [
         # 'FullTemperature_CG',
         # 'Pressure',
-        'Radial_Velocity',
+        # 'Radial_Velocity',           # covered by lab_relative profile stats
         # 'Temperature_CG',
-        'Temperature_Deviation_CG',
+        # 'Temperature_Deviation_CG',  # covered by lab_relative profile stats
         # 'Velocity_x',
         # 'Velocity_y',
         # 'Velocity_z',
@@ -749,13 +899,16 @@ def _base_mantle_features_depths(
         # 'East_Velocity',
         # 'North_Velocity',
         # 'Cell_Volume',
-        'Speed',
-        'Tangential_Speed',
-        'Radial_Tangential_Ratio',
+        # 'Speed',                     # dropped (not in profile stats)
+        # 'Tangential_Speed',          # covered by lab_relative profile stats
+        # 'Radial_Tangential_Ratio',   # dropped (not in profile stats)
         'LAB_Depth',
-        '1000K_Isotherm_Depth',
+        'Slab_Top_Depth',
+        'Slab_Bottom_Depth',
+        'Slab_Thickness',
         'Sublithospheric_Cold_Anomaly_Thickness',
-        'Cold_Anomaly_Magnitude',
+        'Mantle_Wedge_Thickness',
+        # 'Cold_Anomaly_Magnitude',
         'Temperature_Deviation_Avg_0-400km',
         'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
         'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
@@ -804,7 +957,7 @@ def _base_mantle_features_depths(
     return pd.concat(results, axis=1)
 
 
-@features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
+# @features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
 def _base_mantle_features_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
@@ -966,51 +1119,51 @@ def _plate_acceleration(
     return pd.DataFrame(acceleration, columns=["plate_acceleration (cm/yr/Myr)"])
 
 
-def _relative_tangential_velocity_LAB(
-    lons: np.ndarray,
-    lats: np.ndarray,
-    times: np.ndarray,
-
-    offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB
-) -> pd.DataFrame:
-    """Sample relative tangential velocity between plate and mantle using bracket interpolation."""
-    bracket = _get_bracket()
-    floor_lons, floor_lats, floor_times = bracket["floor"]
-    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
-    alpha = bracket["alpha"]
-
-    def _fetch_tangential_velocity_at_LAB(var):
-        da = variables.get(var, features.mantle_dataset)
-        da = da.pint.quantify().pint.to("cm/yr").pint.dequantify()
-        return sample_LAB_depths_interp(
-            ds=features.mantle_dataset, da=da,
-            floor_lons=floor_lons, floor_lats=floor_lats, floor_times=floor_times,
-            ceil_lons=ceil_lons,   ceil_lats=ceil_lats,   ceil_times=ceil_times,
-            alpha=alpha,
-            offset_km=offset_km,
-        ).to_numpy()
-
-    v_mantle = np.column_stack([
-        _fetch_tangential_velocity_at_LAB(variable)
-        for variable in ("East_Velocity", "North_Velocity")
-    ])
-    v_plate = np.column_stack([
-        features.get(feature).to_numpy()
-        for feature in ("east_plate_velocity (cm/yr)", "north_plate_velocity (cm/yr)")
-    ])
-
-    delta_v = v_mantle - v_plate
-    v_mag = np.linalg.norm(delta_v, axis=1)
-
-    result = pd.DataFrame(
-        np.column_stack([delta_v, v_mag]),
-        columns=[
-            f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)",
-            f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)",
-            f"mantle_relative_speed{_lab_suffix(offset_km)} (cm/yr)",
-        ]
-    )
-    return result
+# def _relative_tangential_velocity_LAB(
+#     lons: np.ndarray,
+#     lats: np.ndarray,
+#     times: np.ndarray,
+#
+#     offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB
+# ) -> pd.DataFrame:
+#     """Sample relative tangential velocity between plate and mantle using bracket interpolation."""
+#     bracket = _get_bracket()
+#     floor_lons, floor_lats, floor_times = bracket["floor"]
+#     ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+#     alpha = bracket["alpha"]
+#
+#     def _fetch_tangential_velocity_at_LAB(var):
+#         da = variables.get(var, features.mantle_dataset)
+#         da = da.pint.quantify().pint.to("cm/yr").pint.dequantify()
+#         return sample_LAB_depths_interp(
+#             ds=features.mantle_dataset, da=da,
+#             floor_lons=floor_lons, floor_lats=floor_lats, floor_times=floor_times,
+#             ceil_lons=ceil_lons,   ceil_lats=ceil_lats,   ceil_times=ceil_times,
+#             alpha=alpha,
+#             offset_km=offset_km,
+#         ).to_numpy()
+#
+#     v_mantle = np.column_stack([
+#         _fetch_tangential_velocity_at_LAB(variable)
+#         for variable in ("East_Velocity", "North_Velocity")
+#     ])
+#     v_plate = np.column_stack([
+#         features.get(feature).to_numpy()
+#         for feature in ("east_plate_velocity (cm/yr)", "north_plate_velocity (cm/yr)")
+#     ])
+#
+#     delta_v = v_mantle - v_plate
+#     v_mag = np.linalg.norm(delta_v, axis=1)
+#
+#     result = pd.DataFrame(
+#         np.column_stack([delta_v, v_mag]),
+#         columns=[
+#             f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)",
+#             f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)",
+#             f"mantle_relative_speed{_lab_suffix(offset_km)} (cm/yr)",
+#         ]
+#     )
+#     return result
 
 
 
@@ -1036,32 +1189,32 @@ def _calculate_plate_frame_velocity_components(
     return v_hat_parallel, v_hat_transverse
 
 
-def _relative_velocity_in_plate_frame(
-    lons: np.ndarray,
-    lats: np.ndarray,
-    times: np.ndarray,
-
-    offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB for calculating plate frame velocity components
-) -> pd.DataFrame:
-    """Sample relative velocity between plate and mantle in the reference frame of the overlying plate."""
-    v_rel = np.column_stack([
-        features.get(f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
-        features.get(f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
-    ])
-
-    v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components()
-
-    relative_parallel = np.vecdot(v_rel, v_hat_parallel, axis=1)
-    relative_transverse = np.vecdot(v_rel, v_hat_transverse, axis=1)
-
-    result = pd.DataFrame(
-        np.column_stack([relative_parallel, relative_transverse]),
-        columns=[
-            f"relative_velocity_parallel_to_plate{_lab_suffix(offset_km)} (cm/yr)",
-            f"relative_velocity_transverse_to_plate{_lab_suffix(offset_km)} (cm/yr)",
-        ]
-    )
-    return result
+# def _relative_velocity_in_plate_frame(
+#     lons: np.ndarray,
+#     lats: np.ndarray,
+#     times: np.ndarray,
+#
+#     offset_km: float = 0,  # km; depth to sample mantle velocity below the LAB for calculating plate frame velocity components
+# ) -> pd.DataFrame:
+#     """Sample relative velocity between plate and mantle in the reference frame of the overlying plate."""
+#     v_rel = np.column_stack([
+#         features.get(f"mantle_relative_east_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
+#         features.get(f"mantle_relative_north_velocity{_lab_suffix(offset_km)} (cm/yr)").to_numpy(),
+#     ])
+#
+#     v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components()
+#
+#     relative_parallel = np.vecdot(v_rel, v_hat_parallel, axis=1)
+#     relative_transverse = np.vecdot(v_rel, v_hat_transverse, axis=1)
+#
+#     result = pd.DataFrame(
+#         np.column_stack([relative_parallel, relative_transverse]),
+#         columns=[
+#             f"relative_velocity_parallel_to_plate{_lab_suffix(offset_km)} (cm/yr)",
+#             f"relative_velocity_transverse_to_plate{_lab_suffix(offset_km)} (cm/yr)",
+#         ]
+#     )
+#     return result
 
 
 # @features.register_batch("Temperature_Deviation_Lambdas", coords=snap_to_mantle)
@@ -1092,29 +1245,29 @@ def _relative_velocity_in_plate_frame(
 # Feature transforms accept a feature and registers a new feature based on it.
 
 
-def _feature_LAB_depth_averages(
-    lons,
-    lats,
-    times,
-    sampler: Callable[[np.ndarray, np.ndarray, np.ndarray, float], pd.DataFrame],
-    offset_depths: list[float] = [0, 40, 80, 120],
-) -> pd.DataFrame:
-    """
-    Sample a depth-dependent feature at a series of depth offsets from the LAB, then return the average.
-    """
-    samples = []
-    col_names = None
-    for offset in offset_depths:
-        sample_df = sampler(lons=lons, lats=lats, times=times, offset_km=offset)
-        if col_names is None:
-            col_names = sample_df.columns
-        samples.append(sample_df.to_numpy())
-
-    samples = np.stack(samples, axis=0)
-    average = np.nanmean(samples, axis=0)
-
-    result_df = pd.DataFrame(average, columns=col_names)
-    return result_df
+# def _feature_LAB_depth_averages(
+#     lons,
+#     lats,
+#     times,
+#     sampler: Callable[[np.ndarray, np.ndarray, np.ndarray, float], pd.DataFrame],
+#     offset_depths: list[float] = [0, 40, 80, 120],
+# ) -> pd.DataFrame:
+#     """
+#     Sample a depth-dependent feature at a series of depth offsets from the LAB, then return the average.
+#     """
+#     samples = []
+#     col_names = None
+#     for offset in offset_depths:
+#         sample_df = sampler(lons=lons, lats=lats, times=times, offset_km=offset)
+#         if col_names is None:
+#             col_names = sample_df.columns
+#         samples.append(sample_df.to_numpy())
+#
+#     samples = np.stack(samples, axis=0)
+#     average = np.nanmean(samples, axis=0)
+#
+#     result_df = pd.DataFrame(average, columns=col_names)
+#     return result_df
 
 
 # ==========================================================================================
@@ -1122,50 +1275,42 @@ def _feature_LAB_depth_averages(
 # ==========================================================================================
 
 
-# LAB offsets
-LAB_offsets = [0, 40, 80, 120, 160]
-for LAB_offset in LAB_offsets:
-    # Register relative tangential velocity features at multiple depths below the LAB
-    features.register_batch(
-        declares=[
-            f"mantle_relative_east_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
-            f"mantle_relative_north_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
-            f"mantle_relative_speed{_lab_suffix(LAB_offset)} (cm/yr)",
-        ],
-        coords=reconstructed,
-        probe=False,
-    )(partial(_relative_tangential_velocity_LAB, offset_km=LAB_offset))
-
-    # Register plate-relative tangential velocity features at the LAB
-    features.register_batch(
-        declares=[
-            f"relative_velocity_parallel_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
-            f"relative_velocity_transverse_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
-        ],
-        coords=reconstructed,
-        probe=False,
-    )(partial(_relative_velocity_in_plate_frame, offset_km=LAB_offset))
-
-# Register depth averages of mantle-relative velocity components
-features.register_batch(
-    declares=[
-        f"mantle_relative_east_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
-        f"mantle_relative_north_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
-        f"mantle_relative_speed_LAB_{LAB_offset}km_avg (cm/yr)"
-    ], coords=reconstructed, probe=False,
-    )(partial(_feature_LAB_depth_averages, sampler=_relative_tangential_velocity_LAB, offset_depths=LAB_offsets)
-)
-
-features.register_batch(
-    declares=[
-        f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
-        f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
-    ], coords=reconstructed, probe=False,
-    )(partial(
-        _feature_LAB_depth_averages, sampler=_relative_velocity_in_plate_frame,
-        offset_depths=LAB_offsets
-    )
-)
+# LAB offsets — registration loop removed; depth-offset sampling superseded by lab_relative profile stats
+# LAB_offsets = [0, 40, 80, 120, 160]
+# for LAB_offset in LAB_offsets:
+#     features.register_batch(
+#         declares=[
+#             f"mantle_relative_east_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
+#             f"mantle_relative_north_velocity{_lab_suffix(LAB_offset)} (cm/yr)",
+#             f"mantle_relative_speed{_lab_suffix(LAB_offset)} (cm/yr)",
+#         ],
+#         coords=reconstructed,
+#         probe=False,
+#     )(partial(_relative_tangential_velocity_LAB, offset_km=LAB_offset))
+#
+#     features.register_batch(
+#         declares=[
+#             f"relative_velocity_parallel_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
+#             f"relative_velocity_transverse_to_plate{_lab_suffix(LAB_offset)} (cm/yr)",
+#         ],
+#         coords=reconstructed,
+#         probe=False,
+#     )(partial(_relative_velocity_in_plate_frame, offset_km=LAB_offset))
+#
+# features.register_batch(
+#     declares=[
+#         f"mantle_relative_east_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
+#         f"mantle_relative_north_velocity_LAB_{LAB_offset}km_avg (cm/yr)",
+#         f"mantle_relative_speed_LAB_{LAB_offset}km_avg (cm/yr)"
+#     ], coords=reconstructed, probe=False,
+# )(partial(_feature_LAB_depth_averages, sampler=_relative_tangential_velocity_LAB, offset_depths=LAB_offsets))
+#
+# features.register_batch(
+#     declares=[
+#         f"relative_velocity_parallel_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
+#         f"relative_velocity_transverse_to_plate_LAB_{LAB_offset}km (cm/yr)_avg",
+#     ], coords=reconstructed, probe=False,
+# )(partial(_feature_LAB_depth_averages, sampler=_relative_velocity_in_plate_frame, offset_depths=LAB_offsets))
 
 
 
@@ -1173,8 +1318,11 @@ features.register_batch(
 # Names must match the actual output column names (new convention: lowercase, units in parens).
 base_mantle_features = [
     'lab_depth (km)',
-    '1000k_isotherm_depth (km)',
+    'slab_top_depth (km)',
+    'slab_bottom_depth (km)',
+    'slab_thickness (km)',
     'sublithospheric_cold_anomaly_thickness (km)',
+    'mantle_wedge_thickness (km)',
     'cold_anomaly_magnitude (K)',
     # 'temperature_deviation_avg_0-400km (K)',
     # 'temperature_deviation_avg_0-400km_rolling_30ma (K)',
@@ -1207,8 +1355,11 @@ base_mantle_features = [
 # Maps base_mantle_features column names → mantle variable registry keys for delta sampling.
 _base_mantle_col_to_var: dict[str, str] = {
     'lab_depth (km)':                              'LAB_Depth',
-    '1000k_isotherm_depth (km)':                   '1000K_Isotherm_Depth',
+    'slab_top_depth (km)':                         'Slab_Top_Depth',
+    'slab_bottom_depth (km)':                      'Slab_Bottom_Depth',
+    'slab_thickness (km)':                         'Slab_Thickness',
     'sublithospheric_cold_anomaly_thickness (km)': 'Sublithospheric_Cold_Anomaly_Thickness',
+    'mantle_wedge_thickness (km)':                 'Mantle_Wedge_Thickness',
     'cold_anomaly_magnitude (K)':                  'Cold_Anomaly_Magnitude',
 }
 
@@ -1251,3 +1402,208 @@ def _mantle_variable_deltas(lons: np.ndarray, lats: np.ndarray, times: np.ndarra
 #     delta_df.columns = [f"{col.replace(' ', '_')}_delta" for col in current.columns]
 #     return delta_df
 
+
+# ==========================================================================================
+# Depth-profile statistics
+# ==========================================================================================
+
+# Variables sampled as raw profiles in addition to those in DEPTH_PROFILE_STATS —
+# East/North are needed to compute plate-relative velocity profiles.
+_PROFILE_VARS_BASIC = [
+    k for k in DEPTH_PROFILE_STATS
+    if k not in {"plate_parallel_velocity", "plate_transverse_velocity"}
+] + ["East_Velocity", "North_Velocity"]
+
+
+def _cache_basic_profiles(
+    bracket: dict,
+    ref_depths_floor: np.ndarray,
+    ref_depths_ceil: np.ndarray,
+    slice_size: float,
+    n_depth_samples: int,
+    profile_set_key: str = "lab_relative",
+) -> None:
+    """Sample depth profiles for basic mantle variables and store in features._profile_cache.
+
+    ref_depths_floor and ref_depths_ceil are pre-resolved reference depths at each
+    bracket timestep (passed in so they are computed only once per batch call).
+    Profiles are stored under features._profile_cache[profile_set_key][var].
+
+    Raw (un-blended) floor/ceil profiles are cached in features._raw_profile_cache keyed by
+    (floor_t, ceil_t) so that subsequent calls within the same bracket group (same bracket
+    endpoints but different alpha) skip the expensive RGI sampling and only re-blend.
+    """
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    alpha = bracket["alpha"]
+    ds = features.mantle_dataset
+
+    floor_t = float(floor_times[0])
+    ceil_t  = float(ceil_times[0])
+    bracket_key = (floor_t, ceil_t)
+    raw_cache   = features._raw_profile_cache
+    profile_set = features._profile_cache.setdefault(profile_set_key, {})
+
+    for var in _PROFILE_VARS_BASIC:
+        if bracket_key in raw_cache and var in raw_cache[bracket_key]:
+            floor_profiles, ceil_profiles, offsets = raw_cache[bracket_key][var]
+        else:
+            da = variables.get(var, ds)
+            units = da.attrs.get("units", "unitless")
+            to_units = unit_conversion_mapping.get(units, units)
+            if to_units != units:
+                da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+            floor_profiles, offsets = sample_mantle_var_depth_profile(
+                da, floor_lons, floor_lats, floor_times,
+                ref_depths_floor, slice_size, n_depth_samples,
+            )
+            ceil_profiles, _ = sample_mantle_var_depth_profile(
+                da, ceil_lons, ceil_lats, ceil_times,
+                ref_depths_ceil, slice_size, n_depth_samples,
+            )
+            raw_cache.setdefault(bracket_key, {})[var] = (floor_profiles, ceil_profiles, offsets)
+
+        profiles = floor_profiles + alpha[:, None] * (ceil_profiles - floor_profiles)
+        profile_set[var] = (profiles, offsets)
+
+
+def _cache_plate_relative_profiles(profile_set_key: str = "lab_relative") -> None:
+    """Compute plate-relative velocity profiles from cached East/North profiles.
+
+    Requires East_Velocity and North_Velocity to already be in
+    features._profile_cache[profile_set_key] (populated by _cache_basic_profiles)
+    and plate velocity features to be available via features.get().
+
+    Floor and ceil mantle velocity profiles are each sampled on their own reference-depth
+    grids before temporal interpolation, so the absolute depths differ slightly between
+    brackets. The resulting plate-relative profiles inherit this approximation,
+    consistent with all other bracket-interpolated features.
+    """
+    profile_set = features._profile_cache[profile_set_key]
+    ve_profiles, offsets = profile_set["East_Velocity"]
+    vn_profiles, _       = profile_set["North_Velocity"]
+
+    v_plate_east  = features.get("east_plate_velocity (cm/yr)").to_numpy()   # (N,)
+    v_plate_north = features.get("north_plate_velocity (cm/yr)").to_numpy()  # (N,)
+
+    delta_ve = ve_profiles - v_plate_east[:, None]    # (N, S)
+    delta_vn = vn_profiles - v_plate_north[:, None]   # (N, S)
+
+    v_hat_parallel, v_hat_transverse = _calculate_plate_frame_velocity_components()
+
+    parallel_profiles   = delta_ve * v_hat_parallel[:, 0:1]   + delta_vn * v_hat_parallel[:, 1:2]
+    transverse_profiles = delta_ve * v_hat_transverse[:, 0:1] + delta_vn * v_hat_transverse[:, 1:2]
+
+    profile_set["plate_parallel_velocity"]   = (parallel_profiles,   offsets)
+    profile_set["plate_transverse_velocity"] = (transverse_profiles, offsets)
+
+
+@features.register_batch(
+    declares=profile_stat_column_names(descriptor="lab_relative"),
+    coords=reconstructed,
+    probe=False,
+)
+def _mantle_depth_profile_stats(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    times: np.ndarray,
+    slice_size: float = 300.0,
+    n_depth_samples: int = 30,
+) -> pd.DataFrame:
+    """Extract depth-profile summary statistics for mantle variables.
+
+    For each point, profiles are sampled from the LAB down to LAB + slice_size km
+    at n_depth_samples evenly-spaced offsets. Statistics are then computed on each
+    profile and returned as a flat DataFrame of named columns.
+
+    LAB depths are resolved separately at floor and ceil bracket timesteps and
+    passed to the sampling functions — a single resolution covers all variables.
+    """
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+
+    lab_da = variables.get("LAB_Depth", features.mantle_dataset)
+    ref_depths_floor = sample_mantle_var(lab_da, floor_lons, floor_lats, floor_times).values.flatten()
+    ref_depths_ceil  = sample_mantle_var(lab_da, ceil_lons,  ceil_lats,  ceil_times).values.flatten()
+
+    _cache_basic_profiles(bracket, ref_depths_floor, ref_depths_ceil, slice_size, n_depth_samples,
+                          profile_set_key="lab_relative")
+    _cache_plate_relative_profiles(profile_set_key="lab_relative")
+
+    profile_set = features._profile_cache["lab_relative"]
+    frames = []
+    for var_key, stats in DEPTH_PROFILE_STATS.items():
+        profiles, offsets = profile_set[var_key]
+        var_units = DEPTH_PROFILE_VAR_UNITS[var_key]
+        frames.append(compute_depth_profile_stats(
+            profiles, offsets, var_key, var_units, stats, descriptor="lab_relative",
+        ))
+
+    return pd.concat(frames, axis=1)
+
+
+_TEMP_DEV_PROFILE_STATS = DEPTH_PROFILE_STATS["Temperature_Deviation_CG"]
+_TEMP_DEV_DELTA_DECLARES = [
+    _to_delta_name(col)
+    for col in profile_stat_column_names(
+        {"Temperature_Deviation_CG": _TEMP_DEV_PROFILE_STATS},
+        {"Temperature_Deviation_CG": DEPTH_PROFILE_VAR_UNITS["Temperature_Deviation_CG"]},
+        descriptor="lab_relative",
+    )
+]
+
+
+@features.register_batch(
+    declares=_TEMP_DEV_DELTA_DECLARES,
+    coords=reconstructed,
+    probe=False,
+)
+def _temperature_deviation_profile_stat_deltas(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    times: np.ndarray,
+    slice_size: float = 300.0,
+    n_depth_samples: int = 30,
+) -> pd.DataFrame:
+    """Time gradient of LAB-relative temperature deviation profile stats.
+
+    Samples Temperature_Deviation_CG profiles at the floor and ceil bracket
+    timesteps separately (no alpha blending), computes profile stats on each,
+    and returns (ceil_stats - floor_stats) / t_span as rates per timestep.
+    """
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+
+    lab_da = variables.get("LAB_Depth", features.mantle_dataset)
+    ref_depths_floor = sample_mantle_var(lab_da, floor_lons, floor_lats, floor_times).values.flatten()
+    ref_depths_ceil  = sample_mantle_var(lab_da, ceil_lons,  ceil_lats,  ceil_times).values.flatten()
+
+    da = variables.get("Temperature_Deviation_CG", features.mantle_dataset)
+    units = da.attrs.get("units", "unitless")
+    to_units = unit_conversion_mapping.get(units, units)
+    if to_units != units:
+        da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+
+    floor_profiles, offsets = sample_mantle_var_depth_profile(
+        da, floor_lons, floor_lats, floor_times, ref_depths_floor, slice_size, n_depth_samples,
+    )
+    ceil_profiles, _ = sample_mantle_var_depth_profile(
+        da, ceil_lons, ceil_lats, ceil_times, ref_depths_ceil, slice_size, n_depth_samples,
+    )
+
+    var_units = DEPTH_PROFILE_VAR_UNITS["Temperature_Deviation_CG"]
+    floor_stats = compute_depth_profile_stats(
+        floor_profiles, offsets, "Temperature_Deviation_CG", var_units,
+        _TEMP_DEV_PROFILE_STATS, descriptor="lab_relative",
+    )
+    ceil_stats = compute_depth_profile_stats(
+        ceil_profiles, offsets, "Temperature_Deviation_CG", var_units,
+        _TEMP_DEV_PROFILE_STATS, descriptor="lab_relative",
+    )
+
+    t_span = ceil_times - floor_times
+    safe_span = np.where(t_span > 0, t_span, np.nan)
+    delta = (ceil_stats.values - floor_stats.values) / safe_span[:, None]
+    return pd.DataFrame(delta, columns=_TEMP_DEV_DELTA_DECLARES)
