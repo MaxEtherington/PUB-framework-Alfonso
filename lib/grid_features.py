@@ -492,7 +492,7 @@ class GridFeatureRegistry:
                     ceil_rlons_s = flat_lons.copy()
                     ceil_rlats_s = flat_lats.copy()
                 else:
-                    gpts_ceil = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats, age=0)
+                    gpts_ceil = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats)
                     ceil_rlons_s, ceil_rlats_s, ceil_idx = gpts_ceil.reconstruct(
                         ceil_t, return_array=True, return_point_indices=True)
 
@@ -504,7 +504,7 @@ class GridFeatureRegistry:
                     floor_rlons_valid = valid_flat_lons.copy()
                     floor_rlats_valid = valid_flat_lats.copy()
                 else:
-                    gpts_floor = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats, age=0)
+                    gpts_floor = gpl.Points(self.plate_reconstruction, lons=flat_lons, lats=flat_lats)
                     floor_rlons_s, floor_rlats_s, floor_idx = gpts_floor.reconstruct(
                         floor_t, return_array=True, return_point_indices=True)
                     floor_rlons_full = np.full(N, np.nan)
@@ -549,6 +549,12 @@ class GridFeatureRegistry:
                     ceil_rlats_final  = ceil_rlats_s
 
                 # ── Step 3: per-time sampling ─────────────────────────────────────────
+                if M2 == 0:
+                    for time in group_times:
+                        for name in feature_names:
+                            time_slices[name][time] = np.full((len(lats), len(lons)), np.nan)
+                    continue
+
                 for time in group_times:
                     self.reset()  # clears _results, _profile_cache, _bracket_results,
                                   # _resolved_coordinates; does NOT clear _raw_profile_cache
@@ -1323,7 +1329,7 @@ base_mantle_features = [
     'slab_thickness (km)',
     'sublithospheric_cold_anomaly_thickness (km)',
     'mantle_wedge_thickness (km)',
-    'cold_anomaly_magnitude (K)',
+    # 'cold_anomaly_magnitude (K)',
     # 'temperature_deviation_avg_0-400km (K)',
     # 'temperature_deviation_avg_0-400km_rolling_30ma (K)',
     # 'temperature_deviation_avg_0-400km_rolling_50ma (K)',
@@ -1360,7 +1366,7 @@ _base_mantle_col_to_var: dict[str, str] = {
     'slab_thickness (km)':                         'Slab_Thickness',
     'sublithospheric_cold_anomaly_thickness (km)': 'Sublithospheric_Cold_Anomaly_Thickness',
     'mantle_wedge_thickness (km)':                 'Mantle_Wedge_Thickness',
-    'cold_anomaly_magnitude (K)':                  'Cold_Anomaly_Magnitude',
+    # 'cold_anomaly_magnitude (K)':                  'Cold_Anomaly_Magnitude',
 }
 
 @features.register_batch(
