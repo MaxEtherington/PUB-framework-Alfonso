@@ -109,6 +109,30 @@ class PathConfigManager():
         self.active_feature_sets = set(find_active_feature_sets(config['feature_sets']))
 
 
+    def status(self) -> dict[str, bool]:
+        """Print pipeline output status and return a dict of {label: present}."""
+        checkpoints = [
+            ("00a", "Plate model",        self.PLATE_MODEL_DIR),
+            ("00b", "Training data",      self.TRAINING_DATA_PATH),
+            ("00c", "Grid data",          self.GRID_DATA_PATH),
+            ("01a", "Selected features",  self.SELECTED_FEATURES_PATH),
+            ("01b", "Classifier",         self.CLASSIFIER_PATH),
+            ("02a", "Grid probabilities", self.GRID_PROBABILITIES_PATH),
+            ("02a", "Probability grids",  self.PROBABILITY_GRIDS_DIR),
+            ("02b", "Area recall data",   self.AREA_RECALL_DATA_PATH),
+            ("07",  "Partial dependence", self.PARTIAL_DEPENDENCE_DIR),
+        ]
+        results = {}
+        print(f"Pipeline status — run: {self.config['run_name']}")
+        for stage, label, path in checkpoints:
+            present = path.is_file() or (path.is_dir() and any(path.iterdir()))
+            results[label] = present
+            mark = "✓" if present else "✗"
+            print(f"  [{stage}] {label:<22} {mark}  {path.relative_to(self.ROOT)}")
+        n = sum(results.values())
+        print(f"  {n} / {len(results)} outputs present")
+        return results
+
     def use_features(self, feature_set: str) -> bool:
         return feature_set in self.active_feature_sets
 
