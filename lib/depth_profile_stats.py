@@ -159,14 +159,12 @@ DEPTH_PROFILE_STATS: dict[str, list[Callable]] = {
         max_value, depth_of_max,
     ],
     "plate_parallel_velocity": [
-        ref_value, ref_gradient,
+        ref_value, ref_gradient, depth_integral,
         abs_max_value, depth_of_abs_max,
-        zero_crossing_depth,
     ],
     "plate_transverse_velocity": [
-        ref_value, ref_gradient,
+        ref_value, ref_gradient, depth_integral,
         abs_max_value, depth_of_abs_max,
-        zero_crossing_depth,
     ],
 }
 
