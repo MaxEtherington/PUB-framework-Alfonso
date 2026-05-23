@@ -82,6 +82,7 @@ class PathConfigManager():
 
         # Selected features; regional variants via .with_name(f"selected_features_{r}.csv")
         self.SELECTED_FEATURES_PATH  = self.FEATURE_SELECTION_DIR / 'selected_features.csv'
+        self.SELECTED_FEATURES_MANIFEST_PATH  = self.FEATURE_SELECTION_DIR / 'selected_features_manifest.json'
 
         # Comparison-data output paths (written during cross-validation and area-recall)
         self.CV_AP_SCORES_PATH       = self.CROSS_VALIDATION_DIR / 'cv_ap_scores.csv'
