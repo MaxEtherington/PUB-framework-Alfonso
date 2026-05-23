@@ -963,7 +963,7 @@ def _base_mantle_features_depths(
     return pd.concat(results, axis=1)
 
 
-# @features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
+@features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
 def _base_mantle_features_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
@@ -975,7 +975,7 @@ def _base_mantle_features_LAB(
     ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
     alpha = bracket["alpha"]
 
-    offsets_to_sample = [0, 40, 80, 120]
+    offsets_to_sample = [0]
     results = []
 
     vars_to_sample = [
