@@ -144,11 +144,6 @@ class PathConfigManager():
         for path in [
             self.PLATE_MODEL_DIR,
             self.OUTPUT_DIR,
-            self.FEATURE_SELECTION_DIR,
-            self.CROSS_VALIDATION_DIR,
-            self.FEATURE_IMPORTANCE_DIR,
-            self.AREA_RECALL_DIR,
-            self.PROBABILITY_OUTPUT_DIR,
         ]:
             path.mkdir(parents=True, exist_ok=True)
 
