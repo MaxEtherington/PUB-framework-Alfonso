@@ -60,11 +60,32 @@ class PathConfigManager():
         self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / self.plate_model_name
         self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
         self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
-        # self.TRAINING_DATA_PATH = self.POINTS_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv' 
+        # self.TRAINING_DATA_PATH = self.POINTS_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'
         self.GRID_DATA_PATH = self.POINTS_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
-        self.SELECTED_FEATURES_PATH = self.OUTPUT_DIR / 'selected_features.csv'
+
+        # Output subdirectories (flat hierarchy; PU dir dissolved)
+        self.FEATURE_SELECTION_DIR   = self.OUTPUT_DIR / 'feature_selection'
+        self.CROSS_VALIDATION_DIR    = self.OUTPUT_DIR / 'cross_validation'
+        self.FEATURE_IMPORTANCE_DIR  = self.OUTPUT_DIR / 'feature_importance'
+        self.AREA_RECALL_DIR         = self.OUTPUT_DIR / 'area_recall'
+        self.PARTIAL_DEPENDENCE_DIR  = self.OUTPUT_DIR / 'partial_dependence'
+
+        # Probability grid outputs grouping
+        self.PROBABILITY_OUTPUT_DIR  = self.OUTPUT_DIR / 'probability_grid_outputs'
+        self.GRID_PROBABILITIES_PATH = self.PROBABILITY_OUTPUT_DIR / 'grid_probabilities.csv'
+        self.PROBABILITY_GRIDS_DIR   = self.PROBABILITY_OUTPUT_DIR / 'probability_grids'
+
+        # Classifier base path; regional variants derived via .with_name(f"classifier_{r}.joblib")
+        self.CLASSIFIER_PATH         = self.OUTPUT_DIR / 'classifier.joblib'
+
+        # Selected features; regional variants via .with_name(f"selected_features_{r}.csv")
+        self.SELECTED_FEATURES_PATH  = self.FEATURE_SELECTION_DIR / 'selected_features.csv'
+
+        # Comparison-data output paths (written during cross-validation and area-recall)
+        self.CV_AP_SCORES_PATH       = self.CROSS_VALIDATION_DIR / 'cv_ap_scores.csv'
+        self.AREA_RECALL_DATA_PATH   = self.AREA_RECALL_DIR / 'area_recall_data.csv'
 
         self.TRAINING_DATA_PATH = self.OUTPUT_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'  # Monkey patch TODO
 
@@ -92,7 +113,15 @@ class PathConfigManager():
         """Create all necessary directories based on current config."""
         config = get_params(self.CONFIG_PATH)
 
-        for path in [self.PLATE_MODEL_DIR, self.OUTPUT_DIR]:
+        for path in [
+            self.PLATE_MODEL_DIR,
+            self.OUTPUT_DIR,
+            self.FEATURE_SELECTION_DIR,
+            self.CROSS_VALIDATION_DIR,
+            self.FEATURE_IMPORTANCE_DIR,
+            self.AREA_RECALL_DIR,
+            self.PROBABILITY_OUTPUT_DIR,
+        ]:
             path.mkdir(parents=True, exist_ok=True)
 
         if config['use_extracted_data']:
