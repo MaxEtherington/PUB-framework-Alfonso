@@ -963,7 +963,7 @@ def _base_mantle_features_depths(
     return pd.concat(results, axis=1)
 
 
-@features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
+# @features.register_batch(declares="Base_Mantle_Features_LAB", coords=reconstructed, probe=False)
 def _base_mantle_features_LAB(
     lons: np.ndarray,
     lats: np.ndarray,
