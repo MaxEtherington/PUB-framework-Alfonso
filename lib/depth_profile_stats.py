@@ -97,10 +97,11 @@ depth_of_max.units_kind = "km"
 
 
 def abs_max_value(values: np.ndarray, offsets: np.ndarray) -> float:  # noqa: ARG001
-    """Maximum absolute value in the profile (preserves no sign information)."""
+    """Value with the greatest magnitude in the profile, retaining its sign."""
     if len(values) == 0 or np.all(np.isnan(values)):
         return np.nan
-    return float(np.nanmax(np.abs(values)))
+    idx = np.nanargmax(np.abs(values))
+    return float(values[idx])
 
 
 abs_max_value.units_kind = "identity"
