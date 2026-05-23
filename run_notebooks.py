@@ -21,6 +21,8 @@ def _get_notebook_path(name) -> Path:
     if not candidates:
         raise FileNotFoundError(f"No notebook found containing '{name}'")
     if len(candidates) > 1:
+        candidates = [c for c in candidates if not c.stem.endswith("_output")]
+    if len(candidates) > 1:
         raise ValueError(f"Multiple notebooks found for '{name}': {candidates}")
     return candidates[0]
 
