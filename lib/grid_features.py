@@ -915,27 +915,27 @@ def _base_mantle_features_depths(
         'Sublithospheric_Cold_Anomaly_Thickness',
         'Mantle_Wedge_Thickness',
         # 'Cold_Anomaly_Magnitude',
-        'Temperature_Deviation_Avg_0-400km',
-        'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_0-400km',
+        # 'Temperature_Deviation_Avg_0-400km_Rolling_30Ma',
         'Temperature_Deviation_Avg_0-400km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_100-400km',
-        'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_LAB-120km',
-        'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_LAB-160km',
-        'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_LAB-200km',
-        'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_LAB-300km',
-        'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
-        'Temperature_Deviation_Avg_LAB-400km',
-        'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
-        'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma'
+        # 'Temperature_Deviation_Avg_100-400km',
+        # 'Temperature_Deviation_Avg_100-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_100-400km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-120km',
+        # 'Temperature_Deviation_Avg_LAB-120km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-120km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-160km',
+        # 'Temperature_Deviation_Avg_LAB-160km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-160km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-200km',
+        # 'Temperature_Deviation_Avg_LAB-200km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-200km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-300km',
+        # 'Temperature_Deviation_Avg_LAB-300km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-300km_Rolling_50Ma',
+        # 'Temperature_Deviation_Avg_LAB-400km',
+        # 'Temperature_Deviation_Avg_LAB-400km_Rolling_30Ma',
+        # 'Temperature_Deviation_Avg_LAB-400km_Rolling_50Ma'
     ]
 
     for var in vars_to_sample:
@@ -1446,7 +1446,7 @@ def _cache_basic_profiles(
 
     floor_t = float(floor_times[0])
     ceil_t  = float(ceil_times[0])
-    bracket_key = (floor_t, ceil_t)
+    bracket_key = (floor_t, ceil_t, profile_set_key)
     raw_cache   = features._raw_profile_cache
     profile_set = features._profile_cache.setdefault(profile_set_key, {})
 
@@ -1613,3 +1613,109 @@ def _temperature_deviation_profile_stat_deltas(
     safe_span = np.where(t_span > 0, t_span, np.nan)
     delta = (ceil_stats.values - floor_stats.values) / safe_span[:, None]
     return pd.DataFrame(delta, columns=_TEMP_DEV_DELTA_DECLARES)
+
+
+# ==========================================================================================
+# Upper-mantle profile statistics (0–410 km, reference depth = 0)
+# ==========================================================================================
+
+
+@features.register_batch(
+    declares=profile_stat_column_names(descriptor="upper_mantle"),
+    coords=reconstructed,
+    probe=False,
+)
+def _mantle_upper_mantle_profile_stats(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    times: np.ndarray,
+    slice_size: float = 410.0,
+    n_depth_samples: int = 40,
+) -> pd.DataFrame:
+    """Extract depth-profile summary statistics for the full upper mantle (0–410 km).
+
+    Profiles are sampled from the model surface (0 km) down to slice_size km at
+    n_depth_samples evenly-spaced offsets. No LAB depth lookup required.
+    Same DEPTH_PROFILE_STATS registry as the lab_relative profiles.
+    """
+    bracket = _get_bracket()
+    N = len(bracket["floor"][0])
+    ref_depths = np.zeros(N)
+
+    _cache_basic_profiles(bracket, ref_depths, ref_depths, slice_size, n_depth_samples,
+                          profile_set_key="upper_mantle")
+    _cache_plate_relative_profiles(profile_set_key="upper_mantle")
+
+    profile_set = features._profile_cache["upper_mantle"]
+    frames = []
+    for var_key, stats in DEPTH_PROFILE_STATS.items():
+        profiles, offsets = profile_set[var_key]
+        var_units = DEPTH_PROFILE_VAR_UNITS[var_key]
+        frames.append(compute_depth_profile_stats(
+            profiles, offsets, var_key, var_units, stats, descriptor="upper_mantle",
+        ))
+
+    return pd.concat(frames, axis=1)
+
+
+_TEMP_DEV_UPPER_MANTLE_DELTA_DECLARES = [
+    _to_delta_name(col)
+    for col in profile_stat_column_names(
+        {"Temperature_Deviation_CG": _TEMP_DEV_PROFILE_STATS},
+        {"Temperature_Deviation_CG": DEPTH_PROFILE_VAR_UNITS["Temperature_Deviation_CG"]},
+        descriptor="upper_mantle",
+    )
+]
+
+
+@features.register_batch(
+    declares=_TEMP_DEV_UPPER_MANTLE_DELTA_DECLARES,
+    coords=reconstructed,
+    probe=False,
+)
+def _temperature_deviation_upper_mantle_profile_stat_deltas(
+    lons: np.ndarray,
+    lats: np.ndarray,
+    times: np.ndarray,
+    slice_size: float = 410.0,
+    n_depth_samples: int = 40,
+) -> pd.DataFrame:
+    """Time gradient of upper-mantle temperature deviation profile stats (0–410 km).
+
+    Samples Temperature_Deviation_CG profiles at the floor and ceil bracket timesteps
+    separately (no alpha blending) from the model surface, computes profile stats on each,
+    and returns (ceil_stats - floor_stats) / t_span as rates per Myr.
+    """
+    bracket = _get_bracket()
+    floor_lons, floor_lats, floor_times = bracket["floor"]
+    ceil_lons,  ceil_lats,  ceil_times  = bracket["ceil"]
+    N = len(floor_lons)
+    ref_depths = np.zeros(N)
+
+    da = variables.get("Temperature_Deviation_CG", features.mantle_dataset)
+    units = da.attrs.get("units", "unitless")
+    to_units = unit_conversion_mapping.get(units, units)
+    if to_units != units:
+        da = da.pint.quantify().pint.to(to_units).pint.dequantify()
+
+    floor_profiles, offsets = sample_mantle_var_depth_profile(
+        da, floor_lons, floor_lats, floor_times, ref_depths, slice_size, n_depth_samples,
+    )
+    ceil_profiles, _ = sample_mantle_var_depth_profile(
+        da, ceil_lons, ceil_lats, ceil_times, ref_depths, slice_size, n_depth_samples,
+    )
+
+    var_units = DEPTH_PROFILE_VAR_UNITS["Temperature_Deviation_CG"]
+    floor_stats = compute_depth_profile_stats(
+        floor_profiles, offsets, "Temperature_Deviation_CG", var_units,
+        _TEMP_DEV_PROFILE_STATS, descriptor="upper_mantle",
+    )
+    ceil_stats = compute_depth_profile_stats(
+        ceil_profiles, offsets, "Temperature_Deviation_CG", var_units,
+        _TEMP_DEV_PROFILE_STATS, descriptor="upper_mantle",
+    )
+
+    t_span = ceil_times - floor_times
+    safe_span = np.where(t_span > 0, t_span, np.nan)
+    delta = (ceil_stats.values - floor_stats.values) / safe_span[:, None]
+    return pd.DataFrame(delta, columns=_TEMP_DEV_UPPER_MANTLE_DELTA_DECLARES)

@@ -26,24 +26,24 @@ import pandas as pd
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def lab_value(values: np.ndarray, offsets: np.ndarray) -> float:  # noqa: ARG001
+def ref_value(values: np.ndarray, offsets: np.ndarray) -> float:  # noqa: ARG001
     """Value at the reference depth (offset == 0)."""
     if len(values) == 0 or np.all(np.isnan(values)):
         return np.nan
     return float(values[0])
 
 
-lab_value.units_kind = "identity"
+ref_value.units_kind = "identity"
 
 
-def lab_gradient(values: np.ndarray, offsets: np.ndarray) -> float:
+def ref_gradient(values: np.ndarray, offsets: np.ndarray) -> float:
     """Forward finite-difference gradient at the reference depth."""
     if len(values) < 2 or np.any(np.isnan(values[:2])):
         return np.nan
     return float((values[1] - values[0]) / (offsets[1] - offsets[0]))
 
 
-lab_gradient.units_kind = "per_km"
+ref_gradient.units_kind = "per_km"
 
 
 def depth_integral(values: np.ndarray, offsets: np.ndarray) -> float:
@@ -145,25 +145,26 @@ zero_crossing_depth.units_kind = "km"
 
 DEPTH_PROFILE_STATS: dict[str, list[Callable]] = {
     "Temperature_Deviation_CG": [
-        lab_value, lab_gradient, depth_integral,
+        ref_value, ref_gradient, depth_integral,
         min_value, depth_of_min,
         max_value, depth_of_max,
     ],
     "Tangential_Speed": [
-        lab_value, lab_gradient,
+        ref_value, ref_gradient,
         max_value, depth_of_max,
     ],
     "Radial_Velocity": [
-        lab_value, lab_gradient,
+        ref_value, ref_gradient,
         min_value, depth_of_min,
         max_value, depth_of_max,
     ],
     "plate_parallel_velocity": [
-        lab_value, lab_gradient,
+        ref_value, ref_gradient,
+        abs_max_value, depth_of_abs_max,
         zero_crossing_depth,
     ],
     "plate_transverse_velocity": [
-        lab_value, lab_gradient,
+        ref_value, ref_gradient,
         abs_max_value, depth_of_abs_max,
         zero_crossing_depth,
     ],
@@ -221,9 +222,9 @@ def profile_stat_column_names(
     Examples
     --------
     profile_stat_column_names()
-        # ["temperature_deviation_profile_lab_value (K)", ...]
+        # ["temperature_deviation_profile_ref_value (K)", ...]
     profile_stat_column_names(descriptor="lab_relative")
-        # ["temperature_deviation_lab_relative_lab_value (K)", ...]
+        # ["temperature_deviation_lab_relative_ref_value (K)", ...]
     """
     if stats_registry is None:
         stats_registry = DEPTH_PROFILE_STATS

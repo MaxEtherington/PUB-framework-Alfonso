@@ -60,9 +60,14 @@ class PathConfigManager():
         self.EXTRACTED_DATA_DIR = self.ROOT / 'data_extracted' / self.plate_model_name
         self.RASTER_DATA_DIR = self.EXTRACTED_DATA_DIR / 'rasters'
         self.POINTS_DATA_DIR = self.EXTRACTED_DATA_DIR / 'polygons_points' / f"{config['reference_feature']}_{config['study_zone_buffer']}_deg_buffer"
-        # self.TRAINING_DATA_PATH = self.POINTS_DATA_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'
-        self.GRID_DATA_PATH = self.POINTS_DATA_DIR / 'grid_data.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'grid_data.csv'
 
+        # Training data and associated filepaths
+        active_source_dir = self.POINTS_DATA_DIR if self.use_extracted_data else self.PREPARED_DATA_DIR
+        self.TRAINING_DATA_PATH = active_source_dir / 'training_data_global.csv'
+        self.GRID_DATA_PATH = active_source_dir / 'grid_data.csv'
+        self.FEATURES_MANIFEST_PATH = active_source_dir / 'features_manifest.json'
+
+        # Output figure directories and data files
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
 
         # Output subdirectories (flat hierarchy; PU dir dissolved)
@@ -87,8 +92,6 @@ class PathConfigManager():
         # Comparison-data output paths (written during cross-validation and area-recall)
         self.CV_AP_SCORES_PATH       = self.CROSS_VALIDATION_DIR / 'cv_ap_scores.csv'
         self.AREA_RECALL_DATA_PATH   = self.AREA_RECALL_DIR / 'area_recall_data.csv'
-
-        self.TRAINING_DATA_PATH = self.OUTPUT_DIR / 'training_data_global.csv' if self.use_extracted_data else self.PREPARED_DATA_DIR / 'training_data_global.csv'  # Monkey patch TODO
 
         # Create active feature set list, paths, filenames
         # Feature sets group related features by source data; each can be enabled/disabled in the config
