@@ -475,6 +475,16 @@ class GridFeatureRegistry:
         times_arr = np.array(times, dtype=float)
         floor_arr, ceil_arr = _compute_floor_ceil_times(times_arr, valid_mantle_times)
 
+        # Degenerate case: t == min(valid_times) gives floor == ceil — shift ceil one step forward
+        # so delta samplers have a non-zero t_span (mirrors validate_brackets lines 330–336).
+        exact_hit = floor_arr == ceil_arr
+        if exact_hit.any():
+            sorted_vmt = np.sort(valid_mantle_times)
+            hit_idx = np.searchsorted(sorted_vmt, ceil_arr[exact_hit], side="left")
+            next_idx = np.clip(hit_idx + 1, 0, len(sorted_vmt) - 1)
+            ceil_arr = ceil_arr.copy()
+            ceil_arr[exact_hit] = sorted_vmt[next_idx]
+
         bracket_groups: dict[tuple[float, float], list[float]] = {}
         for t, ft, ct in zip(times, floor_arr, ceil_arr):
             bracket_groups.setdefault((float(ft), float(ct)), []).append(float(t))

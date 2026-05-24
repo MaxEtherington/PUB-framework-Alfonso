@@ -439,6 +439,13 @@ def format_feature_name(s, bold=False):
         "(rad/Ps)": r"($\mathrm{rad. \; {Ps}^{-1}}$)",
         "(K/timestep)": r"($\mathrm{K \; {Myr}^{-1}}$)",
         "(km/timestep)": r"($\mathrm{km \; {Myr}^{-1}}$)",
+        "(K/km)":      r"($\mathrm{K \; {km}^{-1}}$)",
+        "(K·km)":      r"($\mathrm{K {\cdot} km}$)",
+        "(K/km/Myr)":  r"($\mathrm{K \; {km}^{-1} \; {Myr}^{-1}}$)",
+        "(K·km/Myr)":  r"($\mathrm{K {\cdot} km \; {Myr}^{-1}}$)",
+        "(cm/yr/km)":  r"($\mathrm{cm \; {yr}^{-1} \; {km}^{-1}}$)",
+        "(cm/yr·km)":  r"($\mathrm{cm \; {yr}^{-1} {\cdot} km}$)",
+        "(cm/yr/Myr)": r"($\mathrm{cm \; {yr}^{-1} \; {Myr}^{-1}}$)",
     }
     if bold:
         replace = {
