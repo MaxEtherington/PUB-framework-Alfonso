@@ -92,6 +92,8 @@ class PathConfigManager():
         # Comparison-data output paths (written during cross-validation and area-recall)
         self.CV_AP_SCORES_PATH       = self.CROSS_VALIDATION_DIR / 'cv_ap_scores.csv'
         self.AREA_RECALL_DATA_PATH   = self.AREA_RECALL_DIR / 'area_recall_data.csv'
+        self.SHAP_IMPORTANCE_PATH    = self.FEATURE_IMPORTANCE_DIR / 'shap_importance.csv'
+        self.SHAP_VALUES_PATH        = self.FEATURE_IMPORTANCE_DIR / 'shap_values.csv'
 
         # Create active feature set list, paths, filenames
         # Feature sets group related features by source data; each can be enabled/disabled in the config
