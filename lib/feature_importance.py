@@ -1,6 +1,7 @@
 """Several functions to facilitate extracting feature importance values from
 models and plotting the results.
 """
+import colorsys
 from itertools import (
     combinations,
     product,
@@ -11,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from joblib import load
+from matplotlib.collections import PolyCollection
+from matplotlib.patches import Patch
 from scipy.stats import kendalltau
 from sklearn.base import BaseEstimator
 
@@ -315,6 +318,383 @@ def plot_correlations(
         title,
         fontsize=fontsize * 1.25,
         y=1.1,
+    )
+
+    return fig
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Violin plot functions for feature distribution analysis
+# ──────────────────────────────────────────────────────────────────────────────
+
+_LIGHTNESS_FACTOR_UNLABELLED = 0.78  # unlabelled half → slightly darker than base
+_VIOLIN_ALPHA = 0.72                 # shared translucency for all violin bodies
+_OVERALL_COLOUR = (0.45, 0.45, 0.45)  # neutral grey for the "Overall" category
+
+
+def _adjust_lightness(color, factor: float) -> tuple:
+    """Adjust the lightness of *color* by *factor* in HLS space.
+
+    Parameters
+    ----------
+    color : color-like
+        Any matplotlib-parseable colour specification.
+    factor : float
+        Multiplier applied to the HLS L channel.  Values > 1 lighten;
+        values < 1 darken.  The result is clamped to [0, 1].
+
+    Returns
+    -------
+    tuple
+        ``(R, G, B)`` floats in [0, 1].
+    """
+    import matplotlib.colors as mcolors
+
+    r, g, b = mcolors.to_rgb(color)
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    return colorsys.hls_to_rgb(h, max(0.0, min(1.0, l * factor)), s)
+
+
+def make_region_colour_map(regions_filepath) -> dict:
+    """Build a province → colour mapping consistent with notebook 01a.
+
+    Uses the same ``cmc.roma`` colormap and region ordering derived from the
+    regions GeoJSON so that province colours are identical across all figures.
+
+    Parameters
+    ----------
+    regions_filepath : path-like
+        Path to ``data_source/regions/regions.geojson``.
+
+    Returns
+    -------
+    dict[str, tuple]
+        Province name → RGBA colour tuple.
+    """
+    import cmcrameri.cm as cmc
+    import geopandas as gpd
+
+    gdf = gpd.read_file(regions_filepath)
+    unique_regions = list(dict.fromkeys(gdf["region"]))
+    n_r = len(unique_regions)
+    return {name: cmc.roma(i / max(n_r - 1, 1)) for i, name in enumerate(unique_regions)}
+
+
+def create_violin_plot(
+    feature_name: str,
+    categories: list,
+    training_data: pd.DataFrame,
+    ax=None,
+    data_source: str = "training",
+    deployment_data: pd.DataFrame | None = None,
+    region_colour_map: dict | None = None,
+    figsize=None,
+    overall_colour=None,
+    tick_rotation: int = 30,
+) -> "plt.Axes":
+    """Draw a split violin plot for one feature across multiple categories.
+
+    Each x-axis position represents a category (``"Overall"`` or a named
+    metallogenic province).  The *left* half of each violin shows the
+    **Positive** (deposit) class; the *right* half shows the **Unlabelled**
+    class.  Every half-violin is scaled to the same maximum width regardless
+    of sample size, so shapes are directly comparable across categories.
+    Quartile lines (median + IQR) are drawn as dashed lines inside each half.
+
+    Parameters
+    ----------
+    feature_name : str
+        Column name in the data frames.  Must be a feature column in
+        physical units (not standardised).
+    categories : list[str]
+        Ordered list of x-axis categories.  ``"Overall"`` applies no region
+        filter; any other string is matched against the ``"region"`` column.
+    training_data : pd.DataFrame
+        Full training data frame (loaded in notebook 01c).  Positive rows are
+        always sourced from here.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on.  If ``None`` a standalone figure and axes are
+        created.
+    data_source : {"training", "deployment"}
+        Source for the Unlabelled class:
+
+        * ``"training"`` — rows with ``label == "unlabelled"`` in
+          *training_data*.
+        * ``"deployment"`` — all rows of *deployment_data* (treated as
+          unlabelled; no ``label`` column required).
+
+    deployment_data : pd.DataFrame, optional
+        Required when *data_source* is ``"deployment"``.
+    region_colour_map : dict, optional
+        Mapping of province name → base colour.  Build once with
+        :func:`make_region_colour_map` and reuse across calls.  If ``None``,
+        all categories use *overall_colour*.
+    figsize : tuple, optional
+        ``(width, height)`` in inches for standalone mode.  Defaults to the
+        thesis text-width at the golden-ratio aspect ratio.
+    overall_colour : color-like, optional
+        Base colour for the ``"Overall"`` category and any category not found
+        in *region_colour_map*.  Defaults to mid-grey.
+    tick_rotation : int, default 30
+        Rotation in degrees for the x-axis tick labels.  Use 0 for horizontal
+        labels (may overlap with many categories).
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    import seaborn as sns
+
+    if data_source == "deployment" and deployment_data is None:
+        raise ValueError("deployment_data must be provided when data_source='deployment'")
+
+    if region_colour_map is None:
+        region_colour_map = {}
+    if overall_colour is None:
+        overall_colour = _OVERALL_COLOUR
+
+    # ── Build long-format DataFrame ───────────────────────────────────────────
+    parts = []
+    for cat in categories:
+        # Positive class: always from training data
+        if cat == "Overall":
+            pos = training_data[training_data["label"] == "positive"][[feature_name]].copy()
+        else:
+            pos = training_data[
+                (training_data["region"] == cat) & (training_data["label"] == "positive")
+            ][[feature_name]].copy()
+        pos = pos.rename(columns={feature_name: "value"})
+        pos["category"] = cat
+        pos["label"] = "positive"
+        parts.append(pos)
+
+        # Unlabelled class: from training or deployment data
+        if data_source == "training":
+            if cat == "Overall":
+                unl = training_data[training_data["label"] == "unlabelled"][[feature_name]].copy()
+            else:
+                unl = training_data[
+                    (training_data["region"] == cat) & (training_data["label"] == "unlabelled")
+                ][[feature_name]].copy()
+        else:
+            if cat == "Overall":
+                unl = deployment_data[[feature_name]].copy()
+            else:
+                unl = deployment_data[deployment_data["region"] == cat][[feature_name]].copy()
+        unl = unl.rename(columns={feature_name: "value"})
+        unl["category"] = cat
+        unl["label"] = "unlabelled"
+        parts.append(unl)
+
+    long_df = pd.concat(parts, ignore_index=True).dropna(subset=["value"])
+
+    # ── Create axes ───────────────────────────────────────────────────────────
+    if ax is None:
+        TW = 150 / 25.4
+        if figsize is None:
+            figsize = (TW, TW * 0.62)
+        _fig, ax = plt.subplots(figsize=figsize)
+
+    # ── Draw split violin ─────────────────────────────────────────────────────
+    # Placeholder palette — violin bodies are recoloured below.
+    sns.violinplot(
+        data=long_df,
+        x="category",
+        y="value",
+        hue="label",
+        hue_order=["positive", "unlabelled"],
+        order=categories,
+        split=True,
+        inner="quartile",
+        density_norm="width",
+        palette={"positive": "0.75", "unlabelled": "0.55"},
+        linewidth=0.0,
+        inner_kws={"color": "0.15", "linewidth": 0.7, "linestyle": "--"},
+        ax=ax,
+    )
+
+    # ── Recolour violin bodies ────────────────────────────────────────────────
+    # seaborn 0.13 with split=True adds PolyCollection objects in the order:
+    #   [cat0/positive, cat0/unlabelled, cat1/positive, cat1/unlabelled, ...]
+    # (one pair per x-axis position, left = hue_order[0], right = hue_order[1])
+    violin_polys = [c for c in ax.collections if isinstance(c, PolyCollection)]
+    for i, cat in enumerate(categories):
+        base = region_colour_map.get(cat, overall_colour)
+        unlabelled_colour = _adjust_lightness(base, _LIGHTNESS_FACTOR_UNLABELLED)
+        idx_pos = 2 * i
+        idx_unl = 2 * i + 1
+        if idx_pos < len(violin_polys):
+            violin_polys[idx_pos].set_facecolor(base)
+            violin_polys[idx_pos].set_alpha(_VIOLIN_ALPHA)
+        if idx_unl < len(violin_polys):
+            violin_polys[idx_unl].set_facecolor(unlabelled_colour)
+            violin_polys[idx_unl].set_alpha(_VIOLIN_ALPHA)
+
+    # ── Axes decoration ───────────────────────────────────────────────────────
+    ax.set_ylabel(format_feature_name(feature_name))
+    ax.set_xlabel("")
+    # Solid, light gridlines — override thesis.mplstyle's dashed default.
+    ax.grid(axis="y", linestyle="-", linewidth=0.3, color="#E8E8E8")
+    ax.set_axisbelow(True)
+    ax.margins(x=0.08, y=0.05)
+
+    # thesis.mplstyle sets tick label colour to 0.5 grey; x-labels must be black.
+    ax.tick_params(axis="x", rotation=tick_rotation, labelcolor="black")
+    if tick_rotation != 0:
+        for lbl in ax.get_xticklabels():
+            lbl.set_ha("right")
+
+    # Remove seaborn's per-axes legend; grid function adds a shared one.
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.remove()
+
+    return ax
+
+
+def plot_feature_violin_grid(
+    feature_importances: pd.DataFrame,
+    layout: tuple,
+    categories: list,
+    training_data: pd.DataFrame,
+    data_source: str = "training",
+    deployment_data: pd.DataFrame | None = None,
+    region_colour_map: dict | None = None,
+    figsize=None,
+    tick_rotation: int = 30,
+) -> "plt.Figure":
+    """Create a multi-panel violin grid ranked by feature importance.
+
+    Panels are ordered left-to-right, top-to-bottom by descending feature
+    importance rank (column order of *feature_importances*).  Each panel is
+    produced by :func:`create_violin_plot`.  Subplot labels ``(a)``, ``(b)``,
+    … are drawn top-left inside each panel.  A single shared legend is placed
+    at the bottom of the figure.
+
+    Parameters
+    ----------
+    feature_importances : pd.DataFrame
+        Wide DataFrame as saved by notebook 01c — columns are feature names
+        sorted by ``median()`` importance descending, rows are fold × estimator
+        samples.  The first column is the most important feature.  Load with::
+
+            pd.read_csv(gini_importance_basename.with_suffix(".csv"))
+
+    layout : tuple[int, int]
+        ``(n_rows, n_cols)`` for the subplot grid.
+    categories : list[str]
+        Category names for the x-axis of each violin.  Passed directly to
+        :func:`create_violin_plot`.
+    training_data : pd.DataFrame
+        Full training data frame passed to :func:`create_violin_plot`.
+    data_source : {"training", "deployment"}
+        Passed to :func:`create_violin_plot`.
+    deployment_data : pd.DataFrame, optional
+        Passed to :func:`create_violin_plot`.
+    region_colour_map : dict, optional
+        Province → base colour.  Build once with :func:`make_region_colour_map`
+        and pass here so all panels share identical colours.
+    figsize : tuple, optional
+        Figure size in inches.  Defaults to thesis text-width with height
+        scaled by the layout aspect ratio.
+    tick_rotation : int, default 30
+        Passed to :func:`create_violin_plot`.  Rotation in degrees for
+        x-axis tick labels.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    if region_colour_map is None:
+        region_colour_map = {}
+
+    overall_colour = _OVERALL_COLOUR
+
+    # ── Rank features by importance ───────────────────────────────────────────
+    ranked_features = list(feature_importances.median().sort_values(ascending=False).index)
+
+    # ── Create figure ─────────────────────────────────────────────────────────
+    n_rows, n_cols = layout
+    TW = 150 / 25.4
+    if figsize is None:
+        panel_h = TW / n_cols * 1.3
+        figsize = (TW, panel_h * n_rows)
+
+    # sharex so all panels share the same category x-axis; tick labels are
+    # shown only on the bottom row (handled explicitly below).
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, sharex=True)
+    axes_flat = list(np.asarray(axes).flat)
+
+    # ── Draw panels ───────────────────────────────────────────────────────────
+    n_features = len(ranked_features)
+    for i, ax in enumerate(axes_flat):
+        if i < n_features:
+            create_violin_plot(
+                feature_name=ranked_features[i],
+                categories=categories,
+                training_data=training_data,
+                ax=ax,
+                data_source=data_source,
+                deployment_data=deployment_data,
+                region_colour_map=region_colour_map,
+                overall_colour=overall_colour,
+                tick_rotation=tick_rotation,
+            )
+            # Subplot label: bold, outside the axes frame, flush with top edge.
+            ax.text(
+                -0.06, 1.0,
+                f"({chr(ord('a') + i)})",
+                transform=ax.transAxes,
+                va="bottom", ha="right",
+                fontsize=plt.rcParams.get("font.size", 8),
+                fontweight="bold",
+                clip_on=False,
+            )
+        else:
+            ax.set_visible(False)
+
+    # ── Hide x-tick labels on all but the bottom row ──────────────────────────
+    for i, ax in enumerate(axes_flat):
+        if not ax.get_visible():
+            continue
+        row = i // n_cols
+        if row < n_rows - 1:
+            # Hide both labels AND tick marks for rows that share but don't display.
+            ax.tick_params(axis="x", labelbottom=False, bottom=False)
+
+    # ── Shared legend ─────────────────────────────────────────────────────────
+    # Two class-indicator patches (light/dark grey) + one coloured patch per
+    # category to identify the province colours.
+    grey = (0.5, 0.5, 0.5)
+    legend_handles = [
+        Patch(facecolor=grey, alpha=_VIOLIN_ALPHA, label="Deposits"),
+        Patch(facecolor=_adjust_lightness(grey, _LIGHTNESS_FACTOR_UNLABELLED),
+              alpha=_VIOLIN_ALPHA, label="Unlabelled"),
+    ]
+    for cat in categories:
+        base = region_colour_map.get(cat, overall_colour)
+        legend_handles.append(Patch(facecolor=base, alpha=_VIOLIN_ALPHA, label=cat))
+
+    n_cols_legend = min(len(legend_handles), 4)
+    n_legend_rows = (len(legend_handles) + n_cols_legend - 1) // n_cols_legend
+    # Reserve just enough room for the legend rows; tight_layout handles the rest.
+    legend_frac = 0.01 + n_legend_rows * 0.035
+
+    fig.tight_layout(rect=[0, legend_frac, 1, 1])
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.0),
+        bbox_transform=fig.transFigure,
+        ncols=n_cols_legend,
+        fontsize=plt.rcParams.get("xtick.labelsize", 7),
+        frameon=False,
+        handlelength=0.9,
+        handleheight=0.9,
+        handletextpad=0.4,
+        columnspacing=0.6,
+        labelspacing=0.3,
+        borderpad=0,
     )
 
     return fig
