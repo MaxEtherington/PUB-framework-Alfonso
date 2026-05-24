@@ -160,7 +160,7 @@ def _main(args):
 
     for notebook_filepath in notebook_filepaths:
         output_filepath = notebook_filepath if args.overwrite else None
-        run_notebook(notebook_filepath, output_filepath, parameters=None)
+        run_notebook(notebook_filepath, output_filepath, parameters={"config_file": str(p.CONFIG_PATH)})
 
     return 0
 
