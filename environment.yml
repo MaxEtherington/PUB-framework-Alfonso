@@ -36,6 +36,7 @@ dependencies:
   - scikit-learn=1.7.1
   - scipy=1.14.1
   - setuptools=80.10.2
+  - shap
   - shapely=2.1.2
   - tqdm=4.67.3
   - xarray=2025.11.0
