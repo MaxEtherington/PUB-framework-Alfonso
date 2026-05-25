@@ -5,12 +5,12 @@
 #
 #   plt.style.use(pcm.CONFIG_DIR / "thesis.mplstyle")
 #
-# Colour cycle — set in code after loading (mplstyle cannot call Python):
+# Colour system — see lib/colours.py (use: from lib.colours import *):
 #
-#   import cmcrameri.cm as cmc
-#   plt.rcParams["axes.prop_cycle"] = mpl.cycler(
-#       color=[cmc.batlow(i / 7) for i in range(8)]
-#   )
+#   Per-region comparisons:  region_colour(region, "light"|"dark")
+#   Per-feature-set:         feature_set_colour(set_name)
+#   Everything else:         axes.prop_cycle (Dark2) — automatic
+#   Semantic annotations:    leave as-is (red/orange for thresholds)
 #
 # Continuous colormaps — use cmc.batlow directly in each plot call:
 #   ax.scatter(..., cmap=cmc.batlow)
@@ -93,6 +93,10 @@ xtick.labelsize    : 7
 ytick.labelsize    : 7
 
 # ── Colours ───────────────────────────────────────────────────────────────────
+# Default colour cycle — Dark2 qualitative palette (8 colours).
+# Matches lib/colours.py: BASE=index 0, HIGHLIGHT=index 1, regions=2–6, grey=7.
+axes.prop_cycle    : cycler('color', ['1b9e77', 'd95f02', '7570b3', 'e7298a', '66a61e', 'e6ab02', 'a6761d', '666666'])
+
 # Axis labels (xlabel/ylabel) — black for legibility
 axes.labelcolor    : black
 

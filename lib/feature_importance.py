@@ -17,6 +17,7 @@ from matplotlib.patches import Patch
 from scipy.stats import kendalltau
 from sklearn.base import BaseEstimator
 
+from .colours import region_colour
 from .misc import format_feature_name
 
 
@@ -327,9 +328,7 @@ def plot_correlations(
 # Violin plot functions for feature distribution analysis
 # ──────────────────────────────────────────────────────────────────────────────
 
-_LIGHTNESS_FACTOR_UNLABELLED = 0.78  # unlabelled half → slightly darker than base
-_VIOLIN_ALPHA = 0.72                 # shared translucency for all violin bodies
-_OVERALL_COLOUR = (0.45, 0.45, 0.45)  # neutral grey for the "Overall" category
+_VIOLIN_ALPHA = 0.72  # shared translucency for all violin bodies
 
 
 def _adjust_lightness(color, factor: float) -> tuple:
@@ -355,31 +354,6 @@ def _adjust_lightness(color, factor: float) -> tuple:
     return colorsys.hls_to_rgb(h, max(0.0, min(1.0, l * factor)), s)
 
 
-def make_region_colour_map(regions_filepath) -> dict:
-    """Build a province → colour mapping consistent with notebook 01a.
-
-    Uses the same ``cmc.roma`` colormap and region ordering derived from the
-    regions GeoJSON so that province colours are identical across all figures.
-
-    Parameters
-    ----------
-    regions_filepath : path-like
-        Path to ``data_source/regions/regions.geojson``.
-
-    Returns
-    -------
-    dict[str, tuple]
-        Province name → RGBA colour tuple.
-    """
-    import cmcrameri.cm as cmc
-    import geopandas as gpd
-
-    gdf = gpd.read_file(regions_filepath)
-    unique_regions = list(dict.fromkeys(gdf["region"]))
-    n_r = len(unique_regions)
-    return {name: cmc.roma(i / max(n_r - 1, 1)) for i, name in enumerate(unique_regions)}
-
-
 def create_violin_plot(
     feature_name: str,
     categories: list,
@@ -387,9 +361,7 @@ def create_violin_plot(
     ax=None,
     data_source: str = "training",
     deployment_data: pd.DataFrame | None = None,
-    region_colour_map: dict | None = None,
     figsize=None,
-    overall_colour=None,
     tick_rotation: int = 30,
 ) -> "plt.Axes":
     """Draw a split violin plot for one feature across multiple categories.
@@ -400,6 +372,9 @@ def create_violin_plot(
     class.  Every half-violin is scaled to the same maximum width regardless
     of sample size, so shapes are directly comparable across categories.
     Quartile lines (median + IQR) are drawn as dashed lines inside each half.
+
+    Colours are sourced from :mod:`lib.colours` (Set2 for deposits, Dark2 for
+    unlabelled), so they are automatically consistent across all thesis figures.
 
     Parameters
     ----------
@@ -425,16 +400,9 @@ def create_violin_plot(
 
     deployment_data : pd.DataFrame, optional
         Required when *data_source* is ``"deployment"``.
-    region_colour_map : dict, optional
-        Mapping of province name → base colour.  Build once with
-        :func:`make_region_colour_map` and reuse across calls.  If ``None``,
-        all categories use *overall_colour*.
     figsize : tuple, optional
         ``(width, height)`` in inches for standalone mode.  Defaults to the
         thesis text-width at the golden-ratio aspect ratio.
-    overall_colour : color-like, optional
-        Base colour for the ``"Overall"`` category and any category not found
-        in *region_colour_map*.  Defaults to mid-grey.
     tick_rotation : int, default 30
         Rotation in degrees for the x-axis tick labels.  Use 0 for horizontal
         labels (may overlap with many categories).
@@ -447,11 +415,6 @@ def create_violin_plot(
 
     if data_source == "deployment" and deployment_data is None:
         raise ValueError("deployment_data must be provided when data_source='deployment'")
-
-    if region_colour_map is None:
-        region_colour_map = {}
-    if overall_colour is None:
-        overall_colour = _OVERALL_COLOUR
 
     # ── Build long-format DataFrame ───────────────────────────────────────────
     parts = []
@@ -509,7 +472,7 @@ def create_violin_plot(
         density_norm="width",
         palette={"positive": "0.75", "unlabelled": "0.55"},
         linewidth=0.0,
-        inner_kws={"color": "0.15", "linewidth": 0.7, "linestyle": "--"},
+        inner_kws={"color": "white", "linewidth": 0.7, "linestyle": "--"},
         ax=ax,
     )
 
@@ -517,17 +480,16 @@ def create_violin_plot(
     # seaborn 0.13 with split=True adds PolyCollection objects in the order:
     #   [cat0/positive, cat0/unlabelled, cat1/positive, cat1/unlabelled, ...]
     # (one pair per x-axis position, left = hue_order[0], right = hue_order[1])
+    # Deposits → Set2 (light), Unlabelled → Dark2 (dark) from lib.colours.
     violin_polys = [c for c in ax.collections if isinstance(c, PolyCollection)]
     for i, cat in enumerate(categories):
-        base = region_colour_map.get(cat, overall_colour)
-        unlabelled_colour = _adjust_lightness(base, _LIGHTNESS_FACTOR_UNLABELLED)
         idx_pos = 2 * i
         idx_unl = 2 * i + 1
         if idx_pos < len(violin_polys):
-            violin_polys[idx_pos].set_facecolor(base)
+            violin_polys[idx_pos].set_facecolor(region_colour(cat, "light"))
             violin_polys[idx_pos].set_alpha(_VIOLIN_ALPHA)
         if idx_unl < len(violin_polys):
-            violin_polys[idx_unl].set_facecolor(unlabelled_colour)
+            violin_polys[idx_unl].set_facecolor(region_colour(cat, "dark"))
             violin_polys[idx_unl].set_alpha(_VIOLIN_ALPHA)
 
     # ── Axes decoration ───────────────────────────────────────────────────────
@@ -559,7 +521,6 @@ def plot_feature_violin_grid(
     training_data: pd.DataFrame,
     data_source: str = "training",
     deployment_data: pd.DataFrame | None = None,
-    region_colour_map: dict | None = None,
     figsize=None,
     tick_rotation: int = 30,
 ) -> "plt.Figure":
@@ -568,8 +529,11 @@ def plot_feature_violin_grid(
     Panels are ordered left-to-right, top-to-bottom by descending feature
     importance rank (column order of *feature_importances*).  Each panel is
     produced by :func:`create_violin_plot`.  Subplot labels ``(a)``, ``(b)``,
-    … are drawn top-left inside each panel.  A single shared legend is placed
-    at the bottom of the figure.
+    … are placed just outside the top-left corner of each panel.  A single
+    shared legend is placed at the bottom of the figure.
+
+    Colours are sourced automatically from :mod:`lib.colours` (Set2 for
+    deposits, Dark2 for unlabelled).
 
     Parameters
     ----------
@@ -591,9 +555,6 @@ def plot_feature_violin_grid(
         Passed to :func:`create_violin_plot`.
     deployment_data : pd.DataFrame, optional
         Passed to :func:`create_violin_plot`.
-    region_colour_map : dict, optional
-        Province → base colour.  Build once with :func:`make_region_colour_map`
-        and pass here so all panels share identical colours.
     figsize : tuple, optional
         Figure size in inches.  Defaults to thesis text-width with height
         scaled by the layout aspect ratio.
@@ -605,11 +566,6 @@ def plot_feature_violin_grid(
     -------
     matplotlib.figure.Figure
     """
-    if region_colour_map is None:
-        region_colour_map = {}
-
-    overall_colour = _OVERALL_COLOUR
-
     # ── Rank features by importance ───────────────────────────────────────────
     ranked_features = list(feature_importances.median().sort_values(ascending=False).index)
 
@@ -636,13 +592,11 @@ def plot_feature_violin_grid(
                 ax=ax,
                 data_source=data_source,
                 deployment_data=deployment_data,
-                region_colour_map=region_colour_map,
-                overall_colour=overall_colour,
                 tick_rotation=tick_rotation,
             )
             # Subplot label: bold, outside the axes frame, flush with top edge.
             ax.text(
-                -0.06, 1.0,
+                -0.02, 1.02,
                 f"({chr(ord('a') + i)})",
                 transform=ax.transAxes,
                 va="bottom", ha="right",
@@ -665,15 +619,17 @@ def plot_feature_violin_grid(
     # ── Shared legend ─────────────────────────────────────────────────────────
     # Two class-indicator patches (light/dark grey) + one coloured patch per
     # category to identify the province colours.
-    grey = (0.5, 0.5, 0.5)
+    # Class-indicator swatches use the "Overall" grey pair from the palette.
     legend_handles = [
-        Patch(facecolor=grey, alpha=_VIOLIN_ALPHA, label="Deposits"),
-        Patch(facecolor=_adjust_lightness(grey, _LIGHTNESS_FACTOR_UNLABELLED),
+        Patch(facecolor=region_colour("Overall", "light"),
+              alpha=_VIOLIN_ALPHA, label="Deposits"),
+        Patch(facecolor=region_colour("Overall", "dark"),
               alpha=_VIOLIN_ALPHA, label="Unlabelled"),
     ]
     for cat in categories:
-        base = region_colour_map.get(cat, overall_colour)
-        legend_handles.append(Patch(facecolor=base, alpha=_VIOLIN_ALPHA, label=cat))
+        legend_handles.append(
+            Patch(facecolor=region_colour(cat, "light"), alpha=_VIOLIN_ALPHA, label=cat)
+        )
 
     n_cols_legend = min(len(legend_handles), 4)
     n_legend_rows = (len(legend_handles) + n_cols_legend - 1) // n_cols_legend
