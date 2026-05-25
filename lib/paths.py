@@ -70,7 +70,7 @@ class PathConfigManager():
         # Output figure directories and data files
         self.OUTPUT_DIR = self.ROOT / 'output' / config['run_name']
 
-        # Output subdirectories (flat hierarchy; PU dir dissolved)
+        # Output subdirectories
         self.FEATURE_SELECTION_DIR   = self.OUTPUT_DIR / 'feature_selection'
         self.CROSS_VALIDATION_DIR    = self.OUTPUT_DIR / 'cross_validation'
         self.FEATURE_IMPORTANCE_DIR  = self.OUTPUT_DIR / 'feature_importance'
@@ -94,6 +94,7 @@ class PathConfigManager():
         self.AREA_RECALL_DATA_PATH   = self.AREA_RECALL_DIR / 'area_recall_data.csv'
         self.SHAP_IMPORTANCE_PATH    = self.FEATURE_IMPORTANCE_DIR / 'shap_importance.csv'
         self.SHAP_VALUES_PATH        = self.FEATURE_IMPORTANCE_DIR / 'shap_values.csv'
+        self.SHAP_ESTIMATOR_PATH      = self.FEATURE_IMPORTANCE_DIR / 'shap_estimator_values.csv'
 
         # Create active feature set list, paths, filenames
         # Feature sets group related features by source data; each can be enabled/disabled in the config
