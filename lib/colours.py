@@ -13,7 +13,7 @@ Index assignment
   4 : Tethys
   5 : North America
   6 : South America
-  7 : Overall / global — grey pair, used when no region filter is applied
+  7 : Global — grey pair, used when no region filter is applied
 
 Feature-set colours also start at index 0 (subduction=0, mantle=1, …) — the
 same Dark2 indices, used in a different plot context so there is no conflict.
@@ -61,8 +61,8 @@ REGION_NAMES: list[str] = [
 
 _REGION_INDEX: dict[str, int] = {name: i + 2 for i, name in enumerate(REGION_NAMES)}
 
-# Index 7: grey pair for the "Overall" / "Global" (no region filter) category.
-_OVERALL_INDEX = 7
+# Index 7: grey pair for the "Global" (no region filter) category.
+_GLOBAL_INDEX = 7
 
 # ── Feature-set colours (indices 0–N, sequential from Dark2) ─────────────────
 
@@ -78,11 +78,11 @@ def region_colour(region: str, variant: str = "light") -> tuple:
     Parameters
     ----------
     region : str
-        Province name (one of :data:`REGION_NAMES`), ``"Overall"``, or
-        ``"Global"``.  Unknown names fall back to the grey overall colour.
+        Province name (one of :data:`REGION_NAMES`), ``"Global"``.
+        Unknown names fall back to the grey overall colour.
     variant : {"light", "dark"}
-        ``"light"``  → Set2 colour  (used for deposits / positive class).
-        ``"dark"``   → Dark2 colour (used for unlabelled class).
+        ``"light"``  → Set2 colour
+        ``"dark"``   → Dark2 colour
 
     Returns
     -------
@@ -96,7 +96,7 @@ def region_colour(region: str, variant: str = "light") -> tuple:
     >>> region_colour("Overall", "light")     # Set2[7], grey
     >>> region_colour("Global", "light")      # Set2[7], grey (alias)
     """
-    idx = _REGION_INDEX.get(region, _OVERALL_INDEX)
+    idx = _REGION_INDEX.get(region, _GLOBAL_INDEX)
     return (_SET2 if variant == "light" else _DARK2)[idx]
 
 
@@ -150,8 +150,12 @@ class FeatureSetColour:
     def __init__(self, pcm) -> None:
         import json
 
-        with open(pcm.FEATURES_MANIFEST_PATH) as _f:
-            manifest = json.load(_f)
+        if pcm.SELECTED_FEATURES_MANIFEST_PATH.is_file():
+            with open(pcm.SELECTED_FEATURES_MANIFEST_PATH) as _f:
+                manifest = json.load(_f)
+        else:
+            with open(pcm.FEATURES_MANIFEST_PATH) as _f:
+                manifest = json.load(_f)
         self._filtered: dict[str, list[str]] = {
             k: v for k, v in manifest.items() if k in pcm.active_feature_sets
         }
@@ -167,4 +171,4 @@ class FeatureSetColour:
         """Patch handles, one per active feature set, ready for ``ax.legend()``."""
         from matplotlib.patches import Patch
 
-        return [Patch(facecolor=feature_set_colour(n), label=n) for n in self._filtered]
+        return [Patch(facecolor=feature_set_colour(n), label=f"{n} features") for n in self._filtered]
