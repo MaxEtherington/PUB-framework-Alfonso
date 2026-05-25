@@ -417,6 +417,8 @@ def reconstruct_by_topologies(
 
 def format_feature_name(s, bold=False):
     """Make feature names easier to read in plots."""
+    s = s.replace("plate_thickness (m)", "subducting_plate_thickness (m)")
+
     s = s.replace("_", " ")
     s = s[0].capitalize() + s[1:]
 
