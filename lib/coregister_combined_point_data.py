@@ -24,6 +24,7 @@ def run_coregister_combined_point_data(
     point_data: _PathOrDataFrame,
     subduction_data: _PathOrDataFrame,
     output_filename: Optional[_PathLike] = None,
+    max_distance_deg: Optional[float] = None,
     n_jobs: int = 1,
     verbose: bool = False,
 ) -> pd.DataFrame:
@@ -37,6 +38,11 @@ def run_coregister_combined_point_data(
         Subduction zone dataset.
     output_filename : str, optional
         If provided, write the joined data to a CSV file.
+    max_distance_deg : float, optional
+        If given, drop any point whose nearest subduction zone segment is
+        farther than this many degrees (great-circle). Points with no
+        neighbour within this radius are excluded from the returned DataFrame.
+        Pass ``None`` (default) to keep all points regardless of distance.
     n_jobs : int
         Number of processes to use.
     verbose : bool, default: False
@@ -77,6 +83,7 @@ def run_coregister_combined_point_data(
                 szs=subduction_data[
                     subduction_data["age (Ma)"] == int(np.around(time))
                 ],
+                max_distance_deg=max_distance_deg,
             )
             for time in times
         )
@@ -113,6 +120,7 @@ def coregister_combined_point_data(
     time: float,
     points: pd.DataFrame,
     szs: pd.DataFrame,
+    max_distance_deg: Optional[float] = None,
 ) -> pd.DataFrame:
     """Coregister datasets at a give time.
 
@@ -123,6 +131,9 @@ def coregister_combined_point_data(
         Point dataset.
     szs : DataFrame
         Subduction zone dataset.
+    max_distance_deg : float, optional
+        If given, rows in ``points`` whose nearest subduction zone segment
+        is farther than this many degrees are dropped from the output.
     """
     points = points.copy()
     szs = szs.copy().reset_index()
@@ -148,9 +159,16 @@ def coregister_combined_point_data(
     distances, indices = neigh.kneighbors(
         coords_points, n_neighbors=1, return_distance=True
     )
-    # distances = np.rad2deg(distances).flatten()
-    distances = distances.flatten() * EARTH_RADIUS
+    raw_distances = distances.flatten()  # haversine radians
     indices = indices.flatten()
+
+    if max_distance_deg is not None:
+        within = raw_distances <= np.deg2rad(max_distance_deg)
+        raw_distances = raw_distances[within]
+        indices = indices[within]
+        points = points.iloc[within]
+
+    distances = raw_distances * EARTH_RADIUS
 
     for column in columns_to_add:
         for i_points, i_szs in zip(points.index, indices):
