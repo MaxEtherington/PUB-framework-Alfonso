@@ -6,14 +6,14 @@ complementary pair for split visualisations (e.g. deposits vs unlabelled).
 
 Index assignment
 ───────────────
-  0 : BASE      — general-purpose base colour for non-region figures
+  0 : BASE / Global — teal pair; BASE constants and region_colour("Global") both resolve here
   1 : HIGHLIGHT — annotation / highlight colour (warm, loosely copper-toned)
   2 : East Asia
   3 : Southeast Asia
   4 : Tethys
   5 : North America
   6 : South America
-  7 : Global — grey pair, used when no region filter is applied
+  7 : (fallback) — grey pair for unrecognised region names
 
 Feature-set colours also start at index 0 (subduction=0, mantle=1, …) — the
 same Dark2 indices, used in a different plot context so there is no conflict.
@@ -60,8 +60,9 @@ REGION_NAMES: list[str] = [
 ]
 
 _REGION_INDEX: dict[str, int] = {name: i + 2 for i, name in enumerate(REGION_NAMES)}
+_REGION_INDEX["Global"] = 0  # Teal pair — same hue as BASE; explicit so unknown names still fall back to grey.
 
-# Index 7: grey pair for the "Global" (no region filter) category.
+# Index 7: grey pair for unknown/unrecognised region names.
 _GLOBAL_INDEX = 7
 
 # ── Feature-set colours (indices 0–N, sequential from Dark2) ─────────────────
@@ -93,8 +94,8 @@ def region_colour(region: str, variant: str = "light") -> tuple:
     --------
     >>> region_colour("East Asia")            # Set2[2], light
     >>> region_colour("Tethys", "dark")       # Dark2[4]
-    >>> region_colour("Overall", "light")     # Set2[7], grey
-    >>> region_colour("Global", "light")      # Set2[7], grey (alias)
+    >>> region_colour("Global", "light")      # Set2[0], teal — same as BASE["light"]
+    >>> region_colour("Overall", "light")     # Set2[7], grey (unknown name fallback)
     """
     idx = _REGION_INDEX.get(region, _GLOBAL_INDEX)
     return (_SET2 if variant == "light" else _DARK2)[idx]
